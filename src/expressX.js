@@ -30,24 +30,21 @@ function expressX() {
       }
    }
 
-   function useService(path, service, { transport='http' }) {
+   function useHTTP(path, service) {
       // console.log('path', path, 'service', service.name)
 
-      if (transport = 'http') {
-         app.get(path, async (req, res) => {
-            const values = await service.find()
-            res.json(values)
-         })
+      app.get(path, async (req, res) => {
+         const values = await service.find()
+         res.json(values)
+      })
 
-         app.get(`${path}/:id`, async (req, res) => {
-            const value = await service.get(parseInt(req.params.id))
-            res.json(value)
-         })
-      } else {
-
-      }
+      app.get(`${path}/:id`, async (req, res) => {
+         const value = await service.get(parseInt(req.params.id))
+         res.json(value)
+      })
    }
 
+   
    const server = new http.Server(app)
    const io = new socketio.Server(server)
    
@@ -68,7 +65,7 @@ function expressX() {
 
    return Object.assign(app, {
       createDatabaseService,
-      useService,
+      useHTTP,
       server,
    })
 }

@@ -8,6 +8,10 @@ async function main() {
 
       socket.on("hello", (arg) => {
          console.log(arg)
+
+         socket.emit('find', {
+            name: 'user',
+         })
       })
 
    } catch(err) {
