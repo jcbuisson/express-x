@@ -15,7 +15,9 @@ const prisma = new PrismaClient()
 
 
 const userService = app.service('User')
-console.log('xx', userService(3))
+// console.log('xx', userService(3))
+
+const users = await userService.find()
 
 // app.use('/api/users', userService)
 
