@@ -5,13 +5,13 @@ const express = require('express')
 function plume() {
    const app = express()
 
-   function createUserService(param) {
-      const f = (x) => param*x
+   function service(name) {
+      const f = (x) => name + x
       return f
    }
 
    return Object.assign(app, {
-      createUserService,
+      service,
    })
 }
 

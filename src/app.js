@@ -14,7 +14,7 @@ const app = plume()
 const prisma = new PrismaClient()
 
 
-const userService = app.createUserService(100)
+const userService = app.service('User')
 console.log('xx', userService(3))
 
 // app.use('/api/users', userService)
