@@ -1,5 +1,8 @@
 
 const express = require('express')
+const http = require('http')
+const socketio = require('socket.io')
+
 const { PrismaClient } = require('@prisma/client')
 
 
@@ -7,7 +10,7 @@ function plume() {
    const app = express()
    const prisma = new PrismaClient()
 
-   function service(name) {
+   function createDatabaseService(name) {
       return {
          name,
 
@@ -27,7 +30,7 @@ function plume() {
       }
    }
 
-   function useREST(path, service) {
+   function useService(path, service) {
       // console.log('path', path, 'service', service.name)
 
       app.get(path, async (req, res) => {
@@ -36,9 +39,28 @@ function plume() {
       })
    }
 
+   const server = new http.Server(app)
+   const io = new socketio.Server(server)
+   
+   io.on('connection', function(socket) {
+      console.log('Client connected to the WebSocket')
+
+      socket.emit('hello', 'world')
+
+      socket.on('disconnect', () => {
+         console.log('Client disconnected')
+      })
+
+      socket.on('chat message', function(msg) {
+         console.log("Received a chat message")
+         io.emit('chat message', msg)
+      })
+   })
+
    return Object.assign(app, {
-      service,
-      useREST,
+      createDatabaseService,
+      useService,
+      server,
    })
 }
 
