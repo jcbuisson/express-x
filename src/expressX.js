@@ -6,7 +6,7 @@ const socketio = require('socket.io')
 const { PrismaClient } = require('@prisma/client')
 
 
-function plume() {
+function expressX() {
    const app = express()
    const prisma = new PrismaClient()
 
@@ -38,6 +38,11 @@ function plume() {
             const values = await service.find()
             res.json(values)
          })
+
+         app.get(`${path}/:id`, async (req, res) => {
+            const value = await service.get(parseInt(req.params.id))
+            res.json(value)
+         })
       } else {
 
       }
@@ -68,4 +73,4 @@ function plume() {
    })
 }
 
-module.exports = plume
+module.exports = expressX
