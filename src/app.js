@@ -1,9 +1,13 @@
+const express = require('express')
 const http = require('http')
 const socketio = require('socket.io')
 
 const plume = require('./plume')
 
 const app = plume()
+
+app.use(express.urlencoded({ extended: true }))
+app.use(express.json())
 
 
 const userService = app.service('user')
