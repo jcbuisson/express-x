@@ -1,11 +1,13 @@
 
-const plume = require('./plume')
+const expressX = require('./expressX')
 
-const app = plume()
+const app = expressX()
 
 
 const userService = app.createDatabaseService('user')
-app.useService('/api/user', userService)
+app.useService('/api/user', userService, {
+   transport: 'http',
+})
 
 userService.get(1).then(x => console.log('x', x))
 

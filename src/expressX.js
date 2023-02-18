@@ -30,13 +30,17 @@ function plume() {
       }
    }
 
-   function useService(path, service) {
+   function useService(path, service, { transport='http' }) {
       // console.log('path', path, 'service', service.name)
 
-      app.get(path, async (req, res) => {
-         const values = await service.find()
-         res.json(values)
-      })
+      if (transport = 'http') {
+         app.get(path, async (req, res) => {
+            const values = await service.find()
+            res.json(values)
+         })
+      } else {
+
+      }
    }
 
    const server = new http.Server(app)
