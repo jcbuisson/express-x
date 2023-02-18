@@ -10,16 +10,21 @@ function expressX() {
    const app = express()
    const prisma = new PrismaClient()
 
+   const channels = []
+   const services = {}
+
    function createDatabaseService(name) {
-      return {
+      const service = {
          name,
 
          get: async (id) => {
+            // ...before hook
             const value = await prisma[name].findUnique({
                where: {
                  id,
                },
             })
+            // ...after hook
             return value
          },
 
@@ -28,6 +33,8 @@ function expressX() {
             return values
          }
       }
+      services[name] = service
+      return service
    }
 
    function useHTTP(path, service) {
@@ -44,7 +51,7 @@ function expressX() {
       })
    }
 
-   
+
    const server = new http.Server(app)
    const io = new socketio.Server(server)
    
@@ -61,12 +68,20 @@ function expressX() {
          console.log("Received a chat message")
          io.emit('chat message', msg)
       })
+
+      socket.on('find', async ({ name }) => {
+         console.log("find", name)
+         const service = services[name]
+         const values = await service.find()
+         io.emit('found', values)
+      })
    })
 
    return Object.assign(app, {
       createDatabaseService,
       useHTTP,
       server,
+      channels,
    })
 }
 

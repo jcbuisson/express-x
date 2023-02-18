@@ -5,7 +5,8 @@ const app = expressX()
 
 
 const userService = app.createDatabaseService('user')
-userService.get(1).then(x => console.log('x', x))
+userService.get(1)
+   .then(user => console.log('user', user))
 
 app.useHTTP('/api/user', userService)
 

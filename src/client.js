@@ -14,6 +14,10 @@ async function main() {
          })
       })
 
+      socket.on("found", (values) => {
+         console.log('found', values)
+      })
+
    } catch(err) {
       console.log("*** error", err)
    }
