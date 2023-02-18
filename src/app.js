@@ -26,6 +26,8 @@ server.listen(3000, () => console.log('App listening at http://localhost:3000'))
 io.on('connection', function(socket) {
    console.log('Client connected to the WebSocket')
 
+   socket.emit('hello', 'world')
+
    socket.on('disconnect', () => {
       console.log('Client disconnected')
    })
