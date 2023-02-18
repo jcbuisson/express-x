@@ -3,12 +3,13 @@ const socketio = require('socket.io')
 
 const plume = require('./plume')
 
-// const app = express()
 const app = plume()
 
 
 const userService = app.service('user')
-app.useX('/api/user', 'user', userService)
+app.useREST('/api/user', userService)
+
+userService.get(1).then(x => console.log('x', x))
 
 
 // serve index.html

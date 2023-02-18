@@ -9,18 +9,28 @@ function plume() {
 
    function service(name) {
       return {
-         find: async () => {
-            const values = await prisma.user.findMany()
+         name,
+
+         get: async (id) => {
+            const value = await prisma[name].findUnique({
+               where: {
+                 id,
+               },
+            })
+            return value
+         },
+
+         find: async (query = {}) => {
+            const values = await prisma[name].findMany(query)
             return values
          }
       }
    }
 
-   function useX(path, name, service) {
-      console.log('path', path, 'name', name, 'service', service)
+   function useREST(path, service) {
+      // console.log('path', path, 'service', service.name)
 
-      app.get('/users', async (req, res) => {
-         const service = app.service('user')
+      app.get(path, async (req, res) => {
          const values = await service.find()
          res.json(values)
       })
@@ -28,7 +38,7 @@ function plume() {
 
    return Object.assign(app, {
       service,
-      useX,
+      useREST,
    })
 }
 
