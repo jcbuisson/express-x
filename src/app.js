@@ -1,30 +1,14 @@
 const http = require('http')
 const socketio = require('socket.io')
 
-const { PrismaClient } = require('@prisma/client')
-
 const plume = require('./plume')
-
-// const { UserService } = require('./services/user.service')
-
 
 // const app = express()
 const app = plume()
 
-const prisma = new PrismaClient()
 
-
-const userService = app.service('User')
-// console.log('xx', userService(3))
-
-const users = await userService.find()
-
-// app.use('/api/users', userService)
-
-app.get('/users', async (req, res) => {
-   const users = await prisma.user.findMany()
-   res.json(users)
-})
+const userService = app.service('user')
+app.useX('/api/user', 'user', userService)
 
 
 // serve index.html
