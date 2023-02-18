@@ -14,23 +14,25 @@ const app = plume()
 const prisma = new PrismaClient()
 
 
-// const userService = new UserService()
+const userService = app.createUserService(100)
+console.log('xx', userService(3))
 
 // app.use('/api/users', userService)
-
-app.get('/', function (req, res) {
-   res.sendFile(__dirname + '/index.html')
-})
 
 app.get('/users', async (req, res) => {
    const users = await prisma.user.findMany()
    res.json(users)
 })
 
+
+// serve index.html
+app.get('/', function (req, res) {
+   res.sendFile(__dirname + '/index.html')
+})
+
 const server = new http.Server(app)
 const io = new socketio.Server(server)
 server.listen(3000, () => console.log('App listening at http://localhost:3000'))
-
 
 
 
