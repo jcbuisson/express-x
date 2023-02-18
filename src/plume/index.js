@@ -7,7 +7,7 @@ function plume() {
    const app = express()
    const prisma = new PrismaClient()
 
-   function createPrismaService(name) {
+   function createDatabaseService(name) {
       return {
          name,
 
@@ -54,7 +54,7 @@ function plume() {
    }
 
    return Object.assign(app, {
-      createPrismaService,
+      createDatabaseService,
       createCustomService,
       useREST,
    })

@@ -10,7 +10,7 @@ app.use(express.urlencoded({ extended: true }))
 app.use(express.json())
 
 
-const userService = app.createPrismaService('user')
+const userService = app.createDatabaseService('user')
 app.useREST('/api/user', userService)
 
 userService.get(1).then(x => console.log('x', x))
