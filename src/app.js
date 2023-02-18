@@ -10,11 +10,13 @@ app.use(express.urlencoded({ extended: true }))
 app.use(express.json())
 
 
-const userService = app.service('user')
+const userService = app.createPrismaService('user')
 app.useREST('/api/user', userService)
 
 userService.get(1).then(x => console.log('x', x))
 
+const mailService = app.createCustomService('mail')
+mailService.create({ a: 1, b: 2 })
 
 // serve index.html
 app.get('/', function (req, res) {

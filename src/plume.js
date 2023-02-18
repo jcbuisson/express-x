@@ -7,9 +7,16 @@ function plume() {
    const app = express()
    const prisma = new PrismaClient()
 
-   function service(name) {
+   function createPrismaService(name) {
       return {
          name,
+
+         create: async (data) => {
+            const value = await prisma[name].create({
+               data,
+            })
+            return value
+         },
 
          get: async (id) => {
             const value = await prisma[name].findUnique({
@@ -27,6 +34,16 @@ function plume() {
       }
    }
 
+   function createCustomService(name) {
+      return {
+         name,
+
+         create: async (data) => {
+            console.log(name, data)
+         }
+      }
+   }
+
    function useREST(path, service) {
       // console.log('path', path, 'service', service.name)
 
@@ -37,7 +54,8 @@ function plume() {
    }
 
    return Object.assign(app, {
-      service,
+      createPrismaService,
+      createCustomService,
       useREST,
    })
 }
