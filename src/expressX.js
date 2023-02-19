@@ -37,6 +37,11 @@ function expressX() {
       return service
    }
 
+   function service(name) {
+      if (name in services) return services[name]
+      throw Error(`there is no service named '${name}'`)
+   }
+
    function useHTTP(path, service) {
       // console.log('path', path, 'service', service.name)
 
@@ -69,16 +74,34 @@ function expressX() {
          io.emit('chat message', msg)
       })
 
-      socket.on('find', async ({ name }) => {
-         console.log("find", name)
-         const service = services[name]
-         const values = await service.find()
-         io.emit('found', values)
+      socket.on('find-request', async ({ uid, name, query={} }) => {
+         console.log("find-request", uid, name)
+         if (name in services) {
+            const service = services[name]
+            try {
+               const values = await service.find(query)
+               io.emit('find-response', {
+                  uid,
+                  values,
+               })
+            } catch(error) {
+               io.emit('find-response', {
+                  uid,
+                  error,
+               })
+            }
+         } else {
+            io.emit('find-response', {
+               uid,
+               error: `there is no service named '${name}'`,
+            })
+         }
       })
    })
 
    return Object.assign(app, {
       createDatabaseService,
+      service,
       useHTTP,
       server,
       channels,

@@ -3,10 +3,12 @@ const expressX = require('./expressX')
 
 const app = expressX()
 
+app.createDatabaseService('user')
 
-const userService = app.createDatabaseService('user')
-userService.get(1)
-   .then(user => console.log('user', user))
+
+const userService = app.service('user')
+
+userService.get(1).then(user => console.log('user', user))
 
 app.useHTTP('/api/user', userService)
 
@@ -17,4 +19,4 @@ app.get('/', function (req, res) {
    res.sendFile(__dirname + '/index.html')
 })
 
-app.server.listen(3000, () => console.log('App listening at http://localhost:3000'))
+app.server.listen(3030, () => console.log('App listening at http://localhost:3030'))
