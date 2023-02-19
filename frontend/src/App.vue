@@ -4,9 +4,10 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import expressxClient from './expressx-client'
 
-import app from './expressx-client'
 
+const app = expressxClient()
 
 const users = ref([])
 

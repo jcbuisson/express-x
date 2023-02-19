@@ -18,7 +18,7 @@ function expressX() {
          name,
 
          get: async (id) => {
-            // ...before hook
+            // ...before hooks
             const value = await prisma[name].findUnique({
                where: {
                  id,
@@ -29,7 +29,9 @@ function expressX() {
          },
 
          find: async (query = {}) => {
+            // ...before hooks
             const values = await prisma[name].findMany(query)
+            // ...after hook
             return values
          }
       }
