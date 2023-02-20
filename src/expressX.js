@@ -37,7 +37,12 @@ function expressX() {
             const values = await prisma[name].findMany(query)
             // ...after hook
             return values
-         }
+         },
+
+         // pub/sub
+         publish: async () => {
+            return ['everyone']
+         },
       }
       services[name] = service
       return service
@@ -73,11 +78,6 @@ function expressX() {
 
       socket.on('disconnect', () => {
          console.log('Client disconnected')
-      })
-
-      socket.on('chat message', function(msg) {
-         console.log("Received a chat message")
-         io.emit('chat message', msg)
       })
 
       socket.on('find-request', async ({ uid, name, query={} }) => {

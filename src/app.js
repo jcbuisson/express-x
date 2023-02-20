@@ -1,4 +1,4 @@
-const express = require('express')
+
 const expressX = require('./expressX')
 
 
@@ -9,11 +9,10 @@ app.createDatabaseService('user')
 
 const userService = app.service('user')
 
-userService.get(1).then(user => console.log('user', user))
+// userService.get(1).then(user => console.log('user', user))
 
 
 app.useHTTP('/api/user', userService)
-
 
 
 // serve index.html
