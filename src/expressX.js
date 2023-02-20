@@ -1,22 +1,21 @@
 
-const express = require('express')
 const http = require('http')
 const socketio = require('socket.io')
 
 const { PrismaClient } = require('@prisma/client')
 
-
-function expressX() {
-   const app = express()
+/*
+ * Enhance `app` express application with Feathers-like services
+ */
+function enhanceExpress(app) {
    const prisma = new PrismaClient()
-
-   app.use(express.urlencoded({ extended: true }))
-   app.use(express.json())
-
 
    const channels = []
    const services = {}
 
+   /*
+    * create a service `name` based on Prisma table `name`
+    */
    function createDatabaseService(name) {
       const service = {
          name,
@@ -44,15 +43,20 @@ function expressX() {
             return ['everyone']
          },
       }
+      // cache service in `services`
       services[name] = service
       return service
    }
 
+   // get service from `services` cache
    function service(name) {
       if (name in services) return services[name]
       throw Error(`there is no service named '${name}'`)
    }
 
+   /*
+    * provide a REST endpoint at `path`, based on `service`
+    */
    function useHTTP(path, service) {
       // console.log('path', path, 'service', service.name)
 
@@ -68,6 +72,9 @@ function expressX() {
    }
 
 
+   /*
+    * Add websocket transport for services
+    */
    const server = new http.Server(app)
    const io = new socketio.Server(server)
    
@@ -80,6 +87,7 @@ function expressX() {
          console.log('Client disconnected')
       })
 
+      // handle websocket 'find' request
       socket.on('find-request', async ({ uid, name, query={} }) => {
          console.log("find-request", uid, name)
          if (name in services) {
@@ -105,7 +113,8 @@ function expressX() {
       })
    })
 
-   return Object.assign(app, {
+   // enhance `app` with objects and methods
+   Object.assign(app, {
       createDatabaseService,
       service,
       useHTTP,
@@ -114,4 +123,6 @@ function expressX() {
    })
 }
 
-module.exports = expressX
+module.exports = {
+   enhanceExpress,
+}

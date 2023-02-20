@@ -1,8 +1,11 @@
 
-const expressX = require('./expressX')
+const express = require('express')
+const { enhanceExpress } = require('./expressX')
 
 
-const app = expressX()
+const app = express()
+enhanceExpress(app)
+
 
 app.createDatabaseService('user')
 
