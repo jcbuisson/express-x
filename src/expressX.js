@@ -12,6 +12,10 @@ function enhanceExpress(app) {
 
    const channels = []
    const services = {}
+   const publishes = {}
+
+   // let connectionCallback
+   let connectionId = 1
 
    /*
     * create a service `name` based on Prisma table `name`
@@ -20,14 +24,21 @@ function enhanceExpress(app) {
       const service = {
          name,
 
+         create: async (data) => {
+            // TODO...before hooks
+            const value = await prisma[name].create({ data })
+            // TODO...after hook
+            return value
+         },
+
          get: async (id) => {
-            // ...before hooks
+            // TODO...before hooks
             const value = await prisma[name].findUnique({
                where: {
                  id,
                },
             })
-            // ...after hook
+            // TODO...after hook
             return value
          },
 
@@ -39,8 +50,8 @@ function enhanceExpress(app) {
          },
 
          // pub/sub
-         publish: async () => {
-            return ['everyone']
+         publish: async (func) => {
+            publishes[name] = func
          },
       }
       // cache service in `services`
@@ -57,8 +68,13 @@ function enhanceExpress(app) {
    /*
     * provide a REST endpoint at `path`, based on `service`
     */
-   function useHTTP(path, service) {
+   function httpRestService(path, service) {
       // console.log('path', path, 'service', service.name)
+
+      app.post(path, async (req, res) => {
+         const value = await service.create(req.body)
+         res.json(value)
+      })
 
       app.get(path, async (req, res) => {
          const values = await service.find()
@@ -71,7 +87,6 @@ function enhanceExpress(app) {
       })
    }
 
-
    /*
     * Add websocket transport for services
     */
@@ -80,11 +95,54 @@ function enhanceExpress(app) {
    
    io.on('connection', function(socket) {
       console.log('Client connected to the WebSocket')
+      const connection = {
+         id: connectionId++,
+         socket,
+      }
+      // expressjs extends EventEmitter
+      app.emit('connection', connection)
 
       socket.emit('hello', 'world')
 
       socket.on('disconnect', () => {
          console.log('Client disconnected')
+      })
+
+      // handle websocket 'create' request
+      socket.on('create-request', async ({ uid, name, data }) => {
+         console.log("create-request", uid, name)
+         if (name in services) {
+            const service = services[name]
+            try {
+               const value = await service.create(data)
+               io.emit('create-response', {
+                  uid,
+                  value,
+               })
+               // send 'created' event on associated channels
+               const publishFunc = publishes[name]
+               const channelNames = await publishFunc(value, app)
+               console.log('publish channels', channelNames)
+               for (const channelName of channelNames) {
+                  for (const connection of channels[channelName]) {
+                     connection.socket.emit('created', {
+                        name,
+                        value,
+                     })
+                  }
+               }
+            } catch(error) {
+               io.emit('create-response', {
+                  uid,
+                  error,
+               })
+            }
+         } else {
+            io.emit('create-response', {
+               uid,
+               error: `there is no service named '${name}'`,
+            })
+         }
       })
 
       // handle websocket 'find' request
@@ -113,13 +171,22 @@ function enhanceExpress(app) {
       })
    })
 
+   function joinChannel(channelName, connection) {
+      const connectionList = channels[channelName]
+      if (connectionList) {
+         connectionList.push(connection)
+      } else {
+         channels[channelName] = [connection]
+      }
+   }
+
    // enhance `app` with objects and methods
    Object.assign(app, {
       createDatabaseService,
       service,
-      useHTTP,
+      httpRestService,
       server,
-      channels,
+      joinChannel,
    })
 }
 

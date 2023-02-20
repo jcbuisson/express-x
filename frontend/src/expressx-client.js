@@ -7,10 +7,22 @@ function expressxClient() {
    const socket = io()
 
    const waitingPromises = {}
+   const createdHandlers = {}
 
    socket.on("hello", (arg) => {
       console.log(arg)
 
+   })
+
+   socket.on('create-response', ({ uid, error, value }) => {
+      console.log('create-response', uid, error, value)
+      const [resolve, reject] = waitingPromises[uid]
+      if (error) {
+         reject(error)
+      } else {
+         resolve(value)
+      }
+      delete waitingPromises[uid]
    })
 
    socket.on('find-response', ({ uid, error, values }) => {
@@ -24,8 +36,26 @@ function expressxClient() {
       delete waitingPromises[uid]
    })
 
+   socket.on('created', ({ name, value }) => {
+      // console.log('on created, name', name, 'value', value)
+      const handler = createdHandlers[name]
+      handler(value)
+   })
+
    function service(name) {
       return {
+         create: (data) => {
+            const uid = v4()
+            const promise = new Promise((resolve, reject) => {
+               waitingPromises[uid] = [resolve, reject]
+            })
+            socket.emit('create-request', {
+               uid,
+               name,
+               data,
+            })
+            return promise
+         },
          find: () => {
             const uid = v4()
             const promise = new Promise((resolve, reject) => {
@@ -36,6 +66,12 @@ function expressxClient() {
                name,
             })
             return promise
+         },
+
+         on: (eventName, handler) => {
+            if (eventName === 'created') {
+               createdHandlers[name] = handler
+            }
          }
       }
    }
