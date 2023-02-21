@@ -3,6 +3,7 @@
    <div v-for="user in users">
       <li>{{ user.email  }}</li>
    </div>
+   <button @click="sendMail">send mail</button>
 </template>
 
 <script setup>
@@ -15,8 +16,10 @@ const app = expressxClient()
 const users = ref([])
 const email = ref()
 
+
 app.service('user').on('created', user => {
    console.log('USER EVENT created', user)
+   users.value.push(user)
 })
 
 
@@ -30,4 +33,24 @@ const addUser = async () => {
    })
    console.log('created user', user)
 }
+
+const authenticate = async (email, password) => {
+   const { accessToken, user } = await app.authenticate({
+      strategy: 'local',
+      email,
+      password
+   })
+   console.log('authenticated user', user.firstname, user.lastname)
+   return user
+}
+
+const sendMail = () => {
+   app.service('mailer').create({
+      to: "buisson@n7.fr",
+      from: "buisson@nasa.gov",
+      subject: "Fake",
+      text: "Hello from NASA",
+   })
+}
+
 </script>

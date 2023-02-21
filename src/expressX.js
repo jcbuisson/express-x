@@ -14,26 +14,26 @@ function enhanceExpress(app) {
    const services = {}
    const publishes = {}
 
-   // let connectionCallback
    let connectionId = 1
 
    /*
-    * create a service `name` based on Prisma table `name`
+    * create a service `name` based on Prisma table `entity`
     */
-   function createDatabaseService(name) {
+   function createDatabaseService({ name, entity=name, client='prisma' }) {
       const service = {
          name,
+         entity,
 
          create: async (data) => {
             // TODO...before hooks
-            const value = await prisma[name].create({ data })
+            const value = await prisma[entity].create({ data })
             // TODO...after hook
             return value
          },
 
          get: async (id) => {
             // TODO...before hooks
-            const value = await prisma[name].findUnique({
+            const value = await prisma[entity].findUnique({
                where: {
                  id,
                },
@@ -44,7 +44,7 @@ function enhanceExpress(app) {
 
          find: async (query = {}) => {
             // ...before hooks
-            const values = await prisma[name].findMany(query)
+            const values = await prisma[entity].findMany(query)
             // ...after hook
             return values
          },
@@ -52,6 +52,25 @@ function enhanceExpress(app) {
          // pub/sub
          publish: async (func) => {
             publishes[name] = func
+         },
+      }
+      // cache service in `services`
+      services[name] = service
+      return service
+   }
+
+   /*
+    * create a custom service `name`
+    */
+   function createCustomService({ name, create, patch, update, remove }) {
+      const service = {
+         name,
+
+         create: async (data) => {
+            // TODO...before hooks
+            const value = await create(data)
+            // TODO...after hook
+            return value
          },
       }
       // cache service in `services`
@@ -77,7 +96,9 @@ function enhanceExpress(app) {
       })
 
       app.get(path, async (req, res) => {
-         const values = await service.find()
+         const values = await service.find({
+            where: req.body,
+         })
          res.json(values)
       })
 
@@ -121,18 +142,21 @@ function enhanceExpress(app) {
                })
                // send 'created' event on associated channels
                const publishFunc = publishes[name]
-               const channelNames = await publishFunc(value, app)
-               console.log('publish channels', channelNames)
-               for (const channelName of channelNames) {
-                  for (const connection of channels[channelName]) {
-                     connection.socket.emit('created', {
-                        name,
-                        value,
-                     })
+               console.log('publishFunc', publishFunc)
+               if (publishFunc) {
+                  const channelNames = await publishFunc(value, app)
+                  console.log('publish channels', channelNames)
+                  for (const channelName of channelNames) {
+                     for (const connection of channels[channelName]) {
+                        connection.socket.emit('created', {
+                           name,
+                           value,
+                        })
+                     }
                   }
                }
             } catch(error) {
-               io.emit('create-response', {
+               io.emit('error-xxx', {
                   uid,
                   error,
                })
@@ -183,6 +207,7 @@ function enhanceExpress(app) {
    // enhance `app` with objects and methods
    Object.assign(app, {
       createDatabaseService,
+      createCustomService,
       service,
       httpRestService,
       server,

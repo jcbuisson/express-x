@@ -36,8 +36,11 @@ function expressxClient() {
       delete waitingPromises[uid]
    })
 
+   socket.on('error-xxx', ({ uid, error }) => {
+      console.log('error-xxx', uid, error)
+   })
+
    socket.on('created', ({ name, value }) => {
-      // console.log('on created, name', name, 'value', value)
       const handler = createdHandlers[name]
       handler(value)
    })

@@ -1,19 +1,26 @@
 
 const express = require('express')
 const { enhanceExpress } = require('./expressX')
-
+const { sendMail } = require('./mail')
 
 const app = express()
 enhanceExpress(app)
 
 
-app.createDatabaseService('user')
+app.createDatabaseService({
+   name: 'user',
+})
+
+// app.createAuthService(config.get('authentication'))
+
+app.createCustomService({
+   name: 'mailer',
+   create: sendMail,
+})
 
 
 const userService = app.service('user')
-
 // userService.get(1).then(user => console.log('user', user))
-
 
 app.httpRestService('/api/user', userService)
 
@@ -28,7 +35,6 @@ app.server.listen(3030, () => console.log('App listening at http://localhost:303
 
 app.on('connection', (connection) => {
    console.log('connection', connection.id)
-   // app.channel('everyone').join(connection)
    app.joinChannel('everyone', connection)
 })
 
