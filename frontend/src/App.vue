@@ -1,4 +1,8 @@
 <template>
+   <div> <input v-model="email"> email </div>
+   <div> <input v-model="password"> password </div>
+   <button @click="signin">signin</button>
+   <hr>
    <input v-model="email"> <button @click="addUser">add</button>
    <div v-for="user in users">
       <li>{{ user.email  }}</li>
@@ -15,6 +19,7 @@ const app = expressxClient()
 
 const users = ref([])
 const email = ref()
+const password = ref()
 
 
 app.service('user').on('created', user => {
@@ -34,11 +39,11 @@ const addUser = async () => {
    console.log('created user', user)
 }
 
-const authenticate = async (email, password) => {
+const signin = async () => {
    const { accessToken, user } = await app.authenticate({
       strategy: 'local',
-      email,
-      password
+      username: email.value,
+      password: password.value,
    })
    console.log('authenticated user', user.firstname, user.lastname)
    return user

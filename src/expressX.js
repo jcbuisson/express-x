@@ -1,6 +1,7 @@
 
 const http = require('http')
 const socketio = require('socket.io')
+const config = require('config')
 
 const { PrismaClient } = require('@prisma/client')
 
@@ -62,7 +63,7 @@ function enhanceExpress(app) {
    /*
     * create a custom service `name`
     */
-   function createCustomService({ name, create, patch, update, remove }) {
+   function createCustomService({ name, create, get, find, patch, update, remove }) {
       const service = {
          name,
 
@@ -129,67 +130,68 @@ function enhanceExpress(app) {
          console.log('Client disconnected')
       })
 
-      // handle websocket 'create' request
-      socket.on('create-request', async ({ uid, name, data }) => {
-         console.log("create-request", uid, name)
+
+      // handle websocket client request
+      socket.on('client-request', async ({ uid, name, action, ...args }) => {
+         console.log("client-request", uid, name, action, args)
          if (name in services) {
             const service = services[name]
             try {
-               const value = await service.create(data)
-               io.emit('create-response', {
+               const result = await service[action](args)
+               console.log('result', result)
+               io.emit('client-response', {
                   uid,
-                  value,
+                  result,
                })
-               // send 'created' event on associated channels
+               // send event on associated channels
                const publishFunc = publishes[name]
                console.log('publishFunc', publishFunc)
                if (publishFunc) {
-                  const channelNames = await publishFunc(value, app)
+                  const channelNames = await publishFunc(result, app)
                   console.log('publish channels', channelNames)
                   for (const channelName of channelNames) {
                      for (const connection of channels[channelName]) {
-                        connection.socket.emit('created', {
+                        console.log('eventemit', name, channelName, `${action}-ed`)
+                        connection.socket.emit(`${action}-ed`, {
                            name,
-                           value,
+                           result,
                         })
                      }
                   }
                }
             } catch(error) {
+               console.log('error', error)
                io.emit('error-xxx', {
                   uid,
                   error,
                })
             }
          } else {
-            io.emit('create-response', {
+            io.emit('client-response', {
                uid,
                error: `there is no service named '${name}'`,
             })
          }
       })
 
-      // handle websocket 'find' request
-      socket.on('find-request', async ({ uid, name, query={} }) => {
-         console.log("find-request", uid, name)
-         if (name in services) {
-            const service = services[name]
-            try {
-               const values = await service.find(query)
-               io.emit('find-response', {
-                  uid,
-                  values,
-               })
-            } catch(error) {
-               io.emit('find-response', {
-                  uid,
-                  error,
-               })
-            }
+
+      // handle websocket 'authenticate' request
+      socket.on('authenticate-request', async ({ uid, strategy, username, password }) => {
+         const entity = config.authentication.entity
+         const usernameField = config.authentication[strategy].usernameField
+         const passwordField = config.authentication[strategy].passwordField
+         console.log("authenticate-request", uid, strategy, username, password, usernameField, passwordField)
+         // check if a user exists with this username
+         const where = {}
+         where[usernameField] = username
+         const authUser = await prisma[entity].findUnique({ where })
+         if (authUser) {
+            // user exists; check password
+
          } else {
-            io.emit('find-response', {
+            io.emit('authenticate-response', {
                uid,
-               error: `there is no service named '${name}'`,
+               error: `incorrect crendentials (1)`,
             })
          }
       })

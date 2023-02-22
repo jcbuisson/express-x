@@ -6,7 +6,6 @@ module.exports = {
       service: "user",
       secret: "A3lxcjmVD0af6Hjd1fksZyzFGtE=",
       authStrategies: [
-         "jwt",
          "local"
       ],
       jwtOptions: {

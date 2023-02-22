@@ -14,19 +14,19 @@ function expressxClient() {
 
    })
 
-   socket.on('create-response', ({ uid, error, value }) => {
-      console.log('create-response', uid, error, value)
+   socket.on('client-response', ({ uid, error, result }) => {
+      console.log('client-response', uid, error, result)
       const [resolve, reject] = waitingPromises[uid]
       if (error) {
          reject(error)
       } else {
-         resolve(value)
+         resolve(result)
       }
       delete waitingPromises[uid]
    })
 
-   socket.on('find-response', ({ uid, error, values }) => {
-      console.log('find-response', uid, error, values)
+   socket.on('authenticate-response', ({ uid, error, user }) => {
+      console.log('authenticate-response', uid, error, user)
       const [resolve, reject] = waitingPromises[uid]
       if (error) {
          reject(error)
@@ -40,9 +40,9 @@ function expressxClient() {
       console.log('error-xxx', uid, error)
    })
 
-   socket.on('created', ({ name, value }) => {
+   socket.on('create-ed', ({ name, result }) => {
       const handler = createdHandlers[name]
-      handler(value)
+      handler(result)
    })
 
    function service(name) {
@@ -52,10 +52,11 @@ function expressxClient() {
             const promise = new Promise((resolve, reject) => {
                waitingPromises[uid] = [resolve, reject]
             })
-            socket.emit('create-request', {
+            socket.emit('client-request', {
                uid,
                name,
-               data,
+               action: 'create',
+               ...data,
             })
             return promise
          },
@@ -64,9 +65,10 @@ function expressxClient() {
             const promise = new Promise((resolve, reject) => {
                waitingPromises[uid] = [resolve, reject]
             })
-            socket.emit('find-request', {
+            socket.emit('client-request', {
                uid,
                name,
+               action: 'find',
             })
             return promise
          },
@@ -75,13 +77,27 @@ function expressxClient() {
             if (eventName === 'created') {
                createdHandlers[name] = handler
             }
-         }
+         },
       }
+   }
+
+   function authenticate({ strategy, username, password }) {
+      console.log("authenticate", username, password)
+      const uid = v4()
+      const promise = new Promise((resolve, reject) => {
+         waitingPromises[uid] = [resolve, reject]
+      })
+      socket.emit('authenticate-request', {
+         uid,
+         strategy, username, password,
+      })
+      return promise
    }
 
    return {
       service,
       socket,
+      authenticate,
    }
 }
 
