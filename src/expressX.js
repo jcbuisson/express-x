@@ -12,11 +12,11 @@ function enhanceExpress(app) {
    const prisma = new PrismaClient()
    app.set('prisma', prisma) // ?? BOF
 
-   const channels = []
    const services = {}
-   const publishes = {}
+   const publishCallbacks = {}
+   const connections = {}
 
-   let connectionId = 1
+   let lastConnectionId = 1
 
    /*
     * create a service `name` based on Prisma table `entity`
@@ -53,7 +53,7 @@ function enhanceExpress(app) {
 
          // pub/sub
          publish: async (func) => {
-            publishes[name] = func
+            publishCallbacks[name] = func
          },
       }
       // cache service in `services`
@@ -77,7 +77,7 @@ function enhanceExpress(app) {
 
          // pub/sub
          publish: async (func) => {
-            publishes[name] = func
+            publishCallbacks[name] = func
          },
       }
       // cache service in `services`
@@ -128,21 +128,26 @@ function enhanceExpress(app) {
    io.on('connection', function(socket) {
       console.log('Client connected to the WebSocket')
       const connection = {
-         id: connectionId++,
+         id: lastConnectionId++,
          socket,
+         channelNames: new Set(),
       }
-      // expressjs extends EventEmitter
+      // store connection in cache 
+      connections[connection.id] = connection
+
+      // emit 'connection' event for app (expressjs extends EventEmitter)
       app.emit('connection', connection)
 
       socket.emit('hello', 'world')
 
       socket.on('disconnect', () => {
-         console.log('Client disconnected')
+         console.log('Client disconnected', connection.id)
+         delete connections[connection.id]
       })
 
 
       /*
-       * handle websocket client request
+       * Handle websocket client request
        * Emit in return a 'client-response' message
        */
       socket.on('client-request', async ({ uid, name, action, ...args }) => {
@@ -158,13 +163,15 @@ function enhanceExpress(app) {
                   result,
                })
                // send event on associated channels
-               const publishFunc = publishes[name]
+               const publishFunc = publishCallbacks[name]
                if (publishFunc) {
                   const channelNames = await publishFunc(result, app)
                   console.log('publish channels', name, action, channelNames)
                   for (const channelName of channelNames) {
-                     for (const connection of channels[channelName]) {
-                        console.log('service-event', name, action, channelName)
+                     console.log('service-event', name, action, channelName)
+                     const connectionList = Object.values(connections).filter(cnx => cnx.channelNames.has(channelName))
+                     for (const connection of connectionList) {
+                        console.log('emit to', connection.id)
                         connection.socket.emit('service-event', {
                            name,
                            action,
@@ -188,36 +195,10 @@ function enhanceExpress(app) {
          }
       })
 
-   //    // handle websocket 'authenticate' request
-   //    socket.on('authenticate-request', async ({ uid, strategy, username, password }) => {
-   //       const entity = config.authentication.entity
-   //       const usernameField = config.authentication[strategy].usernameField
-   //       const passwordField = config.authentication[strategy].passwordField
-   //       console.log("authenticate-request", uid, strategy, username, password, usernameField, passwordField)
-   //       // check if a user exists with this username
-   //       const where = {}
-   //       where[usernameField] = username
-   //       const authUser = await prisma[entity].findUnique({ where })
-   //       if (authUser) {
-   //          // user exists; check password
-
-   //       } else {
-   //          io.emit('authenticate-response', {
-   //             uid,
-   //             error: `incorrect crendentials (1)`,
-   //          })
-   //       }
-   //    })
-
    })
 
    function joinChannel(channelName, connection) {
-      const connectionList = channels[channelName]
-      if (connectionList) {
-         connectionList.push(connection)
-      } else {
-         channels[channelName] = [connection]
-      }
+      connection.channelNames.add(channelName)
    }
 
    // enhance `app` with objects and methods

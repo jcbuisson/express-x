@@ -43,16 +43,6 @@ const addUser = async () => {
    console.log('created user', user)
 }
 
-// const signin = async () => {
-//    const { accessToken, user } = await app.authenticate({
-//       strategy: 'local',
-//       username: pseudo.value,
-//       password: password.value,
-//    })
-//    console.log('authenticated user', user.firstname, user.lastname)
-//    return user
-// }
-
 const signin = async () => {
    const { error, accessToken, user } = await app.service('authenticate').create({
       strategy: 'local',
