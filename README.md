@@ -1,11 +1,6 @@
 
-# Run chat app
+# Run AdminJS
 
-node src/app.js
-
-open localhost:3000
+npx ts-node src/admin.ts
 
 
-# API
-
-open localhost:3000/api/user

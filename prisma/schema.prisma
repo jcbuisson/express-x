@@ -6,18 +6,17 @@ generator client {
 }
 
 model User {
-  id    Int     @default(autoincrement()) @id
-  email String  @unique
-  name  String?
-  posts Post[]
+  id        Int     @default(autoincrement()) @id
+  pseudo    String  @unique
+  password  String
+  name      String?
+  posts     Post[]
 }
 
 model Post {
   id        Int     @default(autoincrement()) @id
   title     String
-  content   String?
-  published Boolean @default(false)
-  author    User?   @relation(fields: [authorId], references: [id])
+  author    User?   @relation(fields: [authorId], references: [id], onDelete: Cascade)
   authorId  Int?
 }
 

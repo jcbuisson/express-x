@@ -1,28 +1,24 @@
 
 const express = require('express')
 const { enhanceExpress } = require('./expressX')
-const { sendMail } = require('./mail')
+
+const mailService = require('./services/mail.service')
+const authenticateService = require('./services/authenticate.service')
+
 
 const app = express()
 enhanceExpress(app)
 
 
-app.createDatabaseService({
-   name: 'user',
-})
+app.createDatabaseService({name: 'user', client: 'prisma' })
 
 // app.createAuthService(config.get('authentication'))
 
-app.createCustomService({
-   name: 'mailer',
-   create: sendMail,
-})
+app.configure(mailService)
+app.configure(authenticateService)
 
 
-const userService = app.service('user')
-// userService.get(1).then(user => console.log('user', user))
-
-app.httpRestService('/api/user', userService)
+app.httpRestService('/api/user', app.service('user'))
 
 
 // serve index.html
@@ -41,4 +37,3 @@ app.on('connection', (connection) => {
 app.service('user').publish(async (user, context) => {
    return ['everyone']
 })
-

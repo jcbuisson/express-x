@@ -18,7 +18,7 @@ module.exports = {
          expiresIn: "100y"
       },
       local: {
-         usernameField: "email",
+         usernameField: "pseudo",
          passwordField: "password"
       }
    },

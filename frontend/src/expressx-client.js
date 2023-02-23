@@ -7,7 +7,7 @@ function expressxClient() {
    const socket = io()
 
    const waitingPromises = {}
-   const createdHandlers = {}
+   const action2service2handlers = {}
 
    socket.on("hello", (arg) => {
       console.log(arg)
@@ -25,24 +25,11 @@ function expressxClient() {
       delete waitingPromises[uid]
    })
 
-   socket.on('authenticate-response', ({ uid, error, user }) => {
-      console.log('authenticate-response', uid, error, user)
-      const [resolve, reject] = waitingPromises[uid]
-      if (error) {
-         reject(error)
-      } else {
-         resolve(values)
-      }
-      delete waitingPromises[uid]
-   })
-
-   socket.on('error-xxx', ({ uid, error }) => {
-      console.log('error-xxx', uid, error)
-   })
-
-   socket.on('create-ed', ({ name, result }) => {
-      const handler = createdHandlers[name]
-      handler(result)
+   socket.on('service-event', ({ name, action, result }) => {
+      if (!action2service2handlers[action]) action2service2handlers[action] = {}
+      const serviceHandlers = action2service2handlers[action]
+      const handler = serviceHandlers[name]
+      if (handler) handler(result)
    })
 
    function service(name) {
@@ -73,31 +60,33 @@ function expressxClient() {
             return promise
          },
 
-         on: (eventName, handler) => {
-            if (eventName === 'created') {
-               createdHandlers[name] = handler
-            }
+         // add handler to service event
+         on: (action, handler) => {
+            if (!action2service2handlers[action]) action2service2handlers[action] = {}
+            const serviceHandlers = action2service2handlers[action]
+            serviceHandlers[name] = handler
+            console.log('action2service2handlers', action2service2handlers)
          },
       }
    }
 
-   function authenticate({ strategy, username, password }) {
-      console.log("authenticate", username, password)
-      const uid = v4()
-      const promise = new Promise((resolve, reject) => {
-         waitingPromises[uid] = [resolve, reject]
-      })
-      socket.emit('authenticate-request', {
-         uid,
-         strategy, username, password,
-      })
-      return promise
-   }
+   // function authenticate({ strategy, username, password }) {
+   //    console.log("authenticate", username, password)
+   //    const uid = v4()
+   //    const promise = new Promise((resolve, reject) => {
+   //       waitingPromises[uid] = [resolve, reject]
+   //    })
+   //    socket.emit('authenticate-request', {
+   //       uid,
+   //       strategy, username, password,
+   //    })
+   //    return promise
+   // }
 
    return {
       service,
       socket,
-      authenticate,
+      // authenticate,
    }
 }
 

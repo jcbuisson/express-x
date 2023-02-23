@@ -10,6 +10,7 @@ const { PrismaClient } = require('@prisma/client')
  */
 function enhanceExpress(app) {
    const prisma = new PrismaClient()
+   app.set('prisma', prisma) // ?? BOF
 
    const channels = []
    const services = {}
@@ -73,6 +74,11 @@ function enhanceExpress(app) {
             // TODO...after hook
             return value
          },
+
+         // pub/sub
+         publish: async (func) => {
+            publishes[name] = func
+         },
       }
       // cache service in `services`
       services[name] = service
@@ -83,6 +89,10 @@ function enhanceExpress(app) {
    function service(name) {
       if (name in services) return services[name]
       throw Error(`there is no service named '${name}'`)
+   }
+
+   function configure(callback) {
+      callback(app)
    }
 
    /*
@@ -131,13 +141,17 @@ function enhanceExpress(app) {
       })
 
 
-      // handle websocket client request
+      /*
+       * handle websocket client request
+       * Emit in return a 'client-response' message
+       */
       socket.on('client-request', async ({ uid, name, action, ...args }) => {
          console.log("client-request", uid, name, action, args)
          if (name in services) {
             const service = services[name]
             try {
-               const result = await service[action](args)
+               const serviceMethod = service[action]
+               const result = await serviceMethod(args)
                console.log('result', result)
                io.emit('client-response', {
                   uid,
@@ -145,15 +159,15 @@ function enhanceExpress(app) {
                })
                // send event on associated channels
                const publishFunc = publishes[name]
-               console.log('publishFunc', publishFunc)
                if (publishFunc) {
                   const channelNames = await publishFunc(result, app)
-                  console.log('publish channels', channelNames)
+                  console.log('publish channels', name, action, channelNames)
                   for (const channelName of channelNames) {
                      for (const connection of channels[channelName]) {
-                        console.log('eventemit', name, channelName, `${action}-ed`)
-                        connection.socket.emit(`${action}-ed`, {
+                        console.log('service-event', name, action, channelName)
+                        connection.socket.emit('service-event', {
                            name,
+                           action,
                            result,
                         })
                      }
@@ -161,7 +175,7 @@ function enhanceExpress(app) {
                }
             } catch(error) {
                console.log('error', error)
-               io.emit('error-xxx', {
+               io.emit('client-response', {
                   uid,
                   error,
                })
@@ -174,27 +188,27 @@ function enhanceExpress(app) {
          }
       })
 
+   //    // handle websocket 'authenticate' request
+   //    socket.on('authenticate-request', async ({ uid, strategy, username, password }) => {
+   //       const entity = config.authentication.entity
+   //       const usernameField = config.authentication[strategy].usernameField
+   //       const passwordField = config.authentication[strategy].passwordField
+   //       console.log("authenticate-request", uid, strategy, username, password, usernameField, passwordField)
+   //       // check if a user exists with this username
+   //       const where = {}
+   //       where[usernameField] = username
+   //       const authUser = await prisma[entity].findUnique({ where })
+   //       if (authUser) {
+   //          // user exists; check password
 
-      // handle websocket 'authenticate' request
-      socket.on('authenticate-request', async ({ uid, strategy, username, password }) => {
-         const entity = config.authentication.entity
-         const usernameField = config.authentication[strategy].usernameField
-         const passwordField = config.authentication[strategy].passwordField
-         console.log("authenticate-request", uid, strategy, username, password, usernameField, passwordField)
-         // check if a user exists with this username
-         const where = {}
-         where[usernameField] = username
-         const authUser = await prisma[entity].findUnique({ where })
-         if (authUser) {
-            // user exists; check password
+   //       } else {
+   //          io.emit('authenticate-response', {
+   //             uid,
+   //             error: `incorrect crendentials (1)`,
+   //          })
+   //       }
+   //    })
 
-         } else {
-            io.emit('authenticate-response', {
-               uid,
-               error: `incorrect crendentials (1)`,
-            })
-         }
-      })
    })
 
    function joinChannel(channelName, connection) {
@@ -211,6 +225,7 @@ function enhanceExpress(app) {
       createDatabaseService,
       createCustomService,
       service,
+      configure,
       httpRestService,
       server,
       joinChannel,

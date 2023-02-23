@@ -1,11 +1,12 @@
 <template>
-   <div> <input v-model="email"> email </div>
+   <div> <input v-model="pseudo"> pseudo </div>
    <div> <input v-model="password"> password </div>
    <button @click="signin">signin</button>
+   <button @click="addUser">add</button>
    <hr>
-   <input v-model="email"> <button @click="addUser">add</button>
+   
    <div v-for="user in users">
-      <li>{{ user.email  }}</li>
+      <li>{{ user.name  }}</li>
    </div>
    <button @click="sendMail">send mail</button>
 </template>
@@ -16,9 +17,11 @@ import expressxClient from './expressx-client'
 
 
 const app = expressxClient()
+// app.configure(feathers.authentication({ storage: window.sessionStorage }))
+
 
 const users = ref([])
-const email = ref()
+const pseudo = ref()
 const password = ref()
 
 
@@ -34,19 +37,34 @@ onMounted(async () => {
 
 const addUser = async () => {
    const user = await app.service('user').create({
-      email: email.value,
+      pseudo: pseudo.value,
+      password: password.value,
    })
    console.log('created user', user)
 }
 
+// const signin = async () => {
+//    const { accessToken, user } = await app.authenticate({
+//       strategy: 'local',
+//       username: pseudo.value,
+//       password: password.value,
+//    })
+//    console.log('authenticated user', user.firstname, user.lastname)
+//    return user
+// }
+
 const signin = async () => {
-   const { accessToken, user } = await app.authenticate({
+   const { error, accessToken, user } = await app.service('authenticate').create({
       strategy: 'local',
-      username: email.value,
+      username: pseudo.value,
       password: password.value,
    })
-   console.log('authenticated user', user.firstname, user.lastname)
-   return user
+   console.log('authenticate', error, accessToken, user)
+   if (error) {
+
+   } else {
+      window.sessionStorage.setItem('feathers-jwt', accessToken)
+   }
 }
 
 const sendMail = () => {
