@@ -25,7 +25,7 @@ const pseudo = ref()
 const password = ref()
 
 
-app.service('user').on('created', user => {
+app.service('user').on('create', user => {
    console.log('USER EVENT created', user)
    users.value.push(user)
 })

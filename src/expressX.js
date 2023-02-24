@@ -75,6 +75,13 @@ function enhanceExpress(app) {
             return value
          },
 
+         patch: async (id, data) => {
+            // TODO...before hooks
+            const value = await patch(id, data)
+            // TODO...after hook
+            return value
+         },
+
          // pub/sub
          publish: async (func) => {
             publishCallbacks[name] = func
@@ -150,14 +157,21 @@ function enhanceExpress(app) {
        * Handle websocket client request
        * Emit in return a 'client-response' message
        */
-      socket.on('client-request', async ({ uid, name, action, ...args }) => {
-         console.log("client-request", uid, name, action, args)
+      socket.on('client-request', async ({ uid, name, action, argList }) => {
+         console.log("client-request", uid, name, action, argList)
          if (name in services) {
             const service = services[name]
             try {
                const serviceMethod = service[action]
-               const result = await serviceMethod(args)
+               const result = await serviceMethod(...argList)
                console.log('result', result)
+
+               // ?? BOF
+               if (name === 'authenticate' && !result.error) {
+                  console.log('### mark connection as secured', result)
+                  connection.accessToken = result.accessToken
+               }
+
                io.emit('client-response', {
                   uid,
                   result,

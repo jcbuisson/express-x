@@ -9,6 +9,7 @@ module.exports = function (app) {
 
    app.createCustomService({
       name: 'authenticate',
+
       create: async ({ uid, strategy, username, password }) => {
          console.log('authenticate data', strategy, username, password)
          try {
@@ -42,7 +43,11 @@ module.exports = function (app) {
             return {
                error: err.toString(),
             }
-      }
+         }
       },
+
+      patch: async (accessToekn) => {
+
+      }
    })
 }
