@@ -1,7 +1,6 @@
 
 const http = require('http')
 const socketio = require('socket.io')
-const config = require('config')
 
 const { PrismaClient } = require('@prisma/client')
 
@@ -13,7 +12,7 @@ function enhanceExpress(app) {
    app.set('prisma', prisma) // ?? BOF
 
    const services = {}
-   const publishCallbacks = {}
+   // const publishCallbacks = {}
    const connections = {}
 
    let lastConnectionId = 1
@@ -22,49 +21,23 @@ function enhanceExpress(app) {
     * create a service `name` based on Prisma table `entity`
     */
    function createDatabaseService({ name, entity=name, client='prisma' }) {
-      const service = {
+      return createService({
          name,
          entity,
-
-         create: async (data) => {
-            // TODO...before hooks
-            const value = await prisma[entity].create({ data })
-            // TODO...after hook
-            return value
-         },
-
-         get: async (id) => {
-            // TODO...before hooks
-            const value = await prisma[entity].findUnique({
-               where: {
-                 id,
-               },
-            })
-            // TODO...after hook
-            return value
-         },
-
-         find: async (query = {}) => {
-            // ...before hooks
-            const values = await prisma[entity].findMany(query)
-            // ...after hook
-            return values
-         },
-
-         // pub/sub
-         publish: async (func) => {
-            publishCallbacks[name] = func
-         },
-      }
-      // cache service in `services`
-      services[name] = service
-      return service
+         create: (data) => prisma[entity].create({ data }),
+         get: (id) => prisma[entity].findUnique({
+            where: {
+              id,
+            },
+         }),
+         find: (options) => prisma[entity].findMany(options),
+      })
    }
 
    /*
     * create a custom service `name`
     */
-   function createCustomService({ name, create, get, find, patch, update, remove }) {
+   function createService({ name, create, get, find, patch, update, remove }) {
       const service = {
          name,
 
@@ -73,6 +46,20 @@ function enhanceExpress(app) {
             const value = await create(data)
             // TODO...after hook
             return value
+         },
+
+         get: async (id) => {
+            // TODO...before hooks
+            const value = await get(id)
+            // TODO...after hook
+            return value
+         },
+
+         find: async (query = {}) => {
+            // ...before hooks
+            const values = await find(query)
+            // ...after hook
+            return values
          },
 
          patch: async (id, data) => {
@@ -84,8 +71,14 @@ function enhanceExpress(app) {
 
          // pub/sub
          publish: async (func) => {
-            publishCallbacks[name] = func
+            // publishCallbacks[name] = func
+            service.publishCallback = func
          },
+
+         // hooks
+         hooks: (hooksDict) => {
+            service.hooksDict = hooksDict
+         }
       }
       // cache service in `services`
       services[name] = service
@@ -145,7 +138,7 @@ function enhanceExpress(app) {
       // emit 'connection' event for app (expressjs extends EventEmitter)
       app.emit('connection', connection)
 
-      socket.emit('hello', 'world')
+      socket.emit('connected', connection.id)
 
       socket.on('disconnect', () => {
          console.log('Client disconnected', connection.id)
@@ -167,7 +160,7 @@ function enhanceExpress(app) {
                console.log('result', result)
 
                // ?? BOF
-               if (name === 'authenticate' && !result.error) {
+               if (name === 'authenticate' && result && !result.error) {
                   console.log('### mark connection as secured', result)
                   connection.accessToken = result.accessToken
                }
@@ -176,8 +169,9 @@ function enhanceExpress(app) {
                   uid,
                   result,
                })
-               // send event on associated channels
-               const publishFunc = publishCallbacks[name]
+               // pub/sub: send event on associated channels
+               // const publishFunc = publishCallbacks[name]
+               const publishFunc = service.publishCallback
                if (publishFunc) {
                   const channelNames = await publishFunc(result, app)
                   console.log('publish channels', name, action, channelNames)
@@ -218,7 +212,7 @@ function enhanceExpress(app) {
    // enhance `app` with objects and methods
    Object.assign(app, {
       createDatabaseService,
-      createCustomService,
+      createService,
       service,
       configure,
       httpRestService,
