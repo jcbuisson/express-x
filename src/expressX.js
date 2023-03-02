@@ -67,6 +67,9 @@ function expressX(app) {
          service[methodName] = async (context, ...args) => {
             context.args = args
 
+            // if a hook or the method throws an error, it will be caught by `socket.on('client-request'`
+            // and the client will get a rejected promise
+
             // call 'before' hooks, modifying `context.args`
             const beforeMethodHooks = service?.hooks?.before && service.hooks.before[methodName] || []
             const beforeAllHooks = service?.hooks?.before?.all || []
@@ -224,7 +227,6 @@ function expressX(app) {
                   }
                }
             } catch(error) {
-               console.log('error', error)
                io.emit('client-response', {
                   uid,
                   error,
