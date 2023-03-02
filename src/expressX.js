@@ -7,12 +7,11 @@ const { PrismaClient } = require('@prisma/client')
 /*
  * Enhance `app` express application with Feathers-like services
  */
-function enhanceExpress(app) {
+function expressX(app) {
    const prisma = new PrismaClient()
    app.set('prisma', prisma) // ?? BOF
 
    const services = {}
-   // const publishCallbacks = {}
    const connections = {}
 
    let lastConnectionId = 1
@@ -24,62 +23,87 @@ function enhanceExpress(app) {
       return createService({
          name,
          entity,
-         create: (data) => prisma[entity].create({ data }),
-         get: (id) => prisma[entity].findUnique({
-            where: {
-              id,
-            },
-         }),
-         find: (options) => prisma[entity].findMany(options),
+
+         methods: {
+            create: (data) => prisma[entity].create({
+               data,
+            }),
+
+            get: (id) => prisma[entity].findUnique({
+               where: {
+                  id,
+               },
+            }),
+
+            patch: (id, data) => prisma[entity].update({
+               where: {
+                  id,
+               },
+               data,
+            }),
+
+            remove: (id, data) => prisma[entity].delete({
+               where: {
+                  id,
+               },
+            }),
+
+            find: (options) => prisma[entity].findMany(options),
+         }
       })
    }
 
    /*
-    * create a custom service `name`
+    * create a service `name` with given `methods`
     */
-   function createService({ name, create, get, find, patch, update, remove }) {
-      const service = {
-         name,
+   function createService({ name, methods }) {
+      const service = { name }
 
-         create: async (data) => {
-            // TODO...before hooks
-            const value = await create(data)
-            // TODO...after hook
-            return value
-         },
+      for (const methodName in methods) {
+         const method = methods[methodName]
 
-         get: async (id) => {
-            // TODO...before hooks
-            const value = await get(id)
-            // TODO...after hook
-            return value
-         },
+         // `context` is the context of execution (transport type, connection, app)
+         // `args` is the list of arguments of the method
+         service[methodName] = async (context, ...args) => {
+            context.args = args
 
-         find: async (query = {}) => {
-            // ...before hooks
-            const values = await find(query)
-            // ...after hook
-            return values
-         },
+            // call 'before' hooks, modifying `context.args`
+            const beforeMethodHooks = service?.hooks?.before && service.hooks.before[methodName] || []
+            const beforeAllHooks = service?.hooks?.before?.all || []
+            for (const hook of [...beforeMethodHooks, ...beforeAllHooks]) {
+               context = await hook({ ...context, args })
+            }
 
-         patch: async (id, data) => {
-            // TODO...before hooks
-            const value = await patch(id, data)
-            // TODO...after hook
-            return value
-         },
+            // call method
+            const result = await method(...context.args)
+            // console.log('result', result)
 
-         // pub/sub
-         publish: async (func) => {
-            // publishCallbacks[name] = func
-            service.publishCallback = func
-         },
-
-         // hooks
-         hooks: (hooksDict) => {
-            service.hooksDict = hooksDict
+            // call 'after' hooks
+            const afterMethodHooks = service?.hooks?.after && service.hooks.after[methodName] || []
+            const afterAllHooks = service?.hooks?.after?.all || []
+            for (const hook of [...afterMethodHooks, ...afterAllHooks]) {
+               context = await hook({ ...context, result })
+            }
+            return result
          }
       }
+
+      // un-hooked versions of methods: `_create`, etc.
+      for (const methodName in methods) {
+         const method = methods[methodName]
+         service['_' + methodName] = method
+      }
+
+      // attach pub/sub publish callback
+      service.publish = async (func) => {
+         service.publishCallback = func
+      },
+
+      // attach hooks
+      service.hooks = (hooks) => {
+         service.hooks = hooks
+      }
+
       // cache service in `services`
       services[name] = service
       return service
@@ -96,25 +120,37 @@ function enhanceExpress(app) {
    }
 
    /*
-    * provide a REST endpoint at `path`, based on `service`
+    * add an HTTP REST endpoint at `path`, based on `service`
     */
-   function httpRestService(path, service) {
-      // console.log('path', path, 'service', service.name)
+   function addHttpRestRoutes(path, service) {
+
+      const context = {
+         app,
+         transport: 'http',
+      }
 
       app.post(path, async (req, res) => {
-         const value = await service.create(req.body)
+         const value = await service.create(context, req.body)
          res.json(value)
       })
 
       app.get(path, async (req, res) => {
-         const values = await service.find({
-            where: req.body,
-         })
+         const values = await service.find(context, req.body)
          res.json(values)
       })
 
       app.get(`${path}/:id`, async (req, res) => {
-         const value = await service.get(parseInt(req.params.id))
+         const value = await service.get(context, parseInt(req.params.id))
+         res.json(value)
+      })
+
+      app.patch(`${path}/:id`, async (req, res) => {
+         const value = await service.patch(context, parseInt(req.params.id), req.body)
+         res.json(value)
+      })
+
+      app.delete(`${path}/:id`, async (req, res) => {
+         const value = await service.remove(context, parseInt(req.params.id))
          res.json(value)
       })
    }
@@ -138,6 +174,7 @@ function enhanceExpress(app) {
       // emit 'connection' event for app (expressjs extends EventEmitter)
       app.emit('connection', connection)
 
+      // send 'connected' event to client
       socket.emit('connected', connection.id)
 
       socket.on('disconnect', () => {
@@ -150,27 +187,25 @@ function enhanceExpress(app) {
        * Handle websocket client request
        * Emit in return a 'client-response' message
        */
-      socket.on('client-request', async ({ uid, name, action, argList }) => {
-         console.log("client-request", uid, name, action, argList)
+      socket.on('client-request', async ({ uid, name, action, args }) => {
+         console.log("client-request", uid, name, action, args)
          if (name in services) {
             const service = services[name]
             try {
                const serviceMethod = service[action]
-               const result = await serviceMethod(...argList)
-               console.log('result', result)
 
-               // ?? BOF
-               if (name === 'authenticate' && result && !result.error) {
-                  console.log('### mark connection as secured', result)
-                  connection.accessToken = result.accessToken
+               const context = {
+                  app,
+                  transport: 'ws',
+                  connection,
                }
+               const result = await serviceMethod(context, ...args)
 
                io.emit('client-response', {
                   uid,
                   result,
                })
                // pub/sub: send event on associated channels
-               // const publishFunc = publishCallbacks[name]
                const publishFunc = service.publishCallback
                if (publishFunc) {
                   const channelNames = await publishFunc(result, app)
@@ -209,18 +244,22 @@ function enhanceExpress(app) {
       connection.channelNames.add(channelName)
    }
 
+   function leaveChannel(channelName, connection) {
+      connection.channelNames.delete(channelName)
+   }
+
    // enhance `app` with objects and methods
    Object.assign(app, {
       createDatabaseService,
       createService,
       service,
       configure,
-      httpRestService,
+      addHttpRestRoutes,
       server,
       joinChannel,
+      leaveChannel,
    })
+   return app
 }
 
-module.exports = {
-   enhanceExpress,
-}
+module.exports = expressX
