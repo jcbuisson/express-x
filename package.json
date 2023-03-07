@@ -1,8 +1,8 @@
 {
   "name": "@jcbuisson/express-x",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "",
-  "main": "src/expressX.js",
+  "main": "src/index.js",
   "repository": {
     "type": "git",
     "url": "git@gitlab.com:buisson31/express-x.git"
@@ -17,7 +17,6 @@
     "@prisma/client": "^4.10.1",
     "config": "^3.3.9",
     "express": "^4.18.2",
-    "jsonwebtoken": "^9.0.0",
     "socket.io": "^4.6.0"
   },
   "devDependencies": {
