@@ -1,8 +1,7 @@
 
-const http = require('http')
-const socketio = require('socket.io')
-
-const { PrismaClient } = require('@prisma/client')
+import http from 'http'
+import { Server } from "socket.io"
+import { PrismaClient } from '@prisma/client'
 
 /*
  * Enhance `app` express application with Feathers-like services
@@ -158,7 +157,7 @@ function expressX(app) {
     * Add websocket transport for services
     */
    const server = new http.Server(app)
-   const io = new socketio.Server(server)
+   const io = new Server(server)
    
    io.on('connection', function(socket) {
       console.log('Client connected to the WebSocket')
@@ -262,4 +261,4 @@ function expressX(app) {
    return app
 }
 
-module.exports = expressX
+export default expressX
