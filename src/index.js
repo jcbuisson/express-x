@@ -56,13 +56,12 @@ function expressX(app) {
       for (const methodName in methods) {
          const method = methods[methodName]
 
-         // hooked, contextualized version of method (ex: '__create'), called from client
          // `context` is the context of execution (transport type, connection, app)
          // `args` is the list of arguments of the method
          service['__' + methodName] = async (context, ...args) => {
             context.args = args
 
-            // if a hook or the method throws an error, it will be caught by `socket.on('client-request', ...)`
+            // if a hook or the method throws an error, it will be caught by `socket.on('client-request'`
             // and the client will get a rejected promise
 
             // call 'before' hooks, modifying `context.args`
@@ -85,10 +84,10 @@ function expressX(app) {
             return result
          }
 
-         // hooked version of method (ex: 'create'), to be called from backend with no context
+         // hooked version of method: `create`, etc., to be called from backend with no context
          service[methodName] = method
 
-         // un-hooked version of method (ex: '_create'), to be called from backend with no context
+         // un-hooked version of method: `_create`, etc., to be called from backend with no context
          service['_' + methodName] = method
       }
 
@@ -192,37 +191,43 @@ function expressX(app) {
             const service = services[name]
             try {
                const serviceMethod = service['__' + action]
+               if (serviceMethod) {
+                  const context = {
+                     app,
+                     transport: 'ws',
+                     connection,
+                     name,
+                     action,
+                  }
+                  const result = await serviceMethod(context, ...args)
 
-               const context = {
-                  app,
-                  transport: 'ws',
-                  connection,
-                  name,
-                  action,
-               }
-               const result = await serviceMethod(context, ...args)
-
-               io.emit('client-response', {
-                  uid,
-                  result,
-               })
-               // pub/sub: send event on associated channels
-               const publishFunc = service.publishCallback
-               if (publishFunc) {
-                  const channelNames = await publishFunc(result, app)
-                  console.log('publish channels', name, action, channelNames)
-                  for (const channelName of channelNames) {
-                     console.log('service-event', name, action, channelName)
-                     const connectionList = Object.values(connections).filter(cnx => cnx.channelNames.has(channelName))
-                     for (const connection of connectionList) {
-                        console.log('emit to', connection.id)
-                        connection.socket.emit('service-event', {
-                           name,
-                           action,
-                           result,
-                        })
+                  io.emit('client-response', {
+                     uid,
+                     result,
+                  })
+                  // pub/sub: send event on associated channels
+                  const publishFunc = service.publishCallback
+                  if (publishFunc) {
+                     const channelNames = await publishFunc(result, app)
+                     console.log('publish channels', name, action, channelNames)
+                     for (const channelName of channelNames) {
+                        console.log('service-event', name, action, channelName)
+                        const connectionList = Object.values(connections).filter(cnx => cnx.channelNames.has(channelName))
+                        for (const connection of connectionList) {
+                           console.log('emit to', connection.id)
+                           connection.socket.emit('service-event', {
+                              name,
+                              action,
+                              result,
+                           })
+                        }
                      }
                   }
+               } else {
+                  io.emit('client-response', {
+                     uid,
+                     error: `there is no method named '${action}' for service '${name}'`,
+                  })
                }
             } catch(error) {
                io.emit('client-response', {
