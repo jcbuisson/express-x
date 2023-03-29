@@ -14,6 +14,7 @@ function expressX(app) {
    const connections = {}
 
    let lastConnectionId = 1
+   let isDebug = false
 
    /*
     * create a service `name` based on Prisma table `entity`
@@ -73,7 +74,7 @@ function expressX(app) {
 
             // call method
             const result = await method(...context.args)
-            // console.log('result', result)
+            // if (isDebug) console.log('result', result)
 
             // call 'after' hooks
             const afterMethodHooks = service?.hooks?.after && service.hooks.after[methodName] || []
@@ -160,7 +161,7 @@ function expressX(app) {
    const io = new Server(server)
    
    io.on('connection', function(socket) {
-      console.log('Client connected to the WebSocket')
+      if (isDebug) console.log('Client connected to the WebSocket')
       const connection = {
          id: lastConnectionId++,
          socket,
@@ -168,6 +169,7 @@ function expressX(app) {
       }
       // store connection in cache 
       connections[connection.id] = connection
+      if (isDebug) console.log('active connections', connections)
 
       // emit 'connection' event for app (expressjs extends EventEmitter)
       app.emit('connection', connection)
@@ -176,7 +178,7 @@ function expressX(app) {
       socket.emit('connected', connection.id)
 
       socket.on('disconnect', () => {
-         console.log('Client disconnected', connection.id)
+         if (isDebug) console.log('Client disconnected', connection.id)
          delete connections[connection.id]
       })
 
@@ -186,7 +188,7 @@ function expressX(app) {
        * Emit in return a 'client-response' message
        */
       socket.on('client-request', async ({ uid, name, action, args }) => {
-         console.log("client-request", uid, name, action, args)
+         if (isDebug) console.log("client-request", uid, name, action, args)
          if (name in services) {
             const service = services[name]
             try {
@@ -209,12 +211,12 @@ function expressX(app) {
                   const publishFunc = service.publishCallback
                   if (publishFunc) {
                      const channelNames = await publishFunc(result, app)
-                     console.log('publish channels', name, action, channelNames)
+                     if (isDebug) console.log('publish channels', name, action, channelNames)
                      for (const channelName of channelNames) {
-                        console.log('service-event', name, action, channelName)
+                        if (isDebug) console.log('service-event', name, action, channelName)
                         const connectionList = Object.values(connections).filter(cnx => cnx.channelNames.has(channelName))
                         for (const connection of connectionList) {
-                           console.log('emit to', connection.id)
+                           if (isDebug) console.log('emit to', connection.id)
                            connection.socket.emit('service-event', {
                               name,
                               action,
@@ -253,6 +255,10 @@ function expressX(app) {
       connection.channelNames.delete(channelName)
    }
 
+   function setDebug(isOn) {
+      isDebug = isOn
+   }
+
    // enhance `app` with objects and methods
    Object.assign(app, {
       createDatabaseService,
@@ -263,6 +269,7 @@ function expressX(app) {
       server,
       joinChannel,
       leaveChannel,
+      setDebug,
    })
    return app
 }
