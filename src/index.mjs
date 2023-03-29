@@ -169,7 +169,7 @@ function expressX(app) {
       }
       // store connection in cache 
       connections[connection.id] = connection
-      if (isDebug) console.log('active connections', connections.map(cnx => cnx.id))
+      if (isDebug) console.log('active connections', Object.keys(connections))
 
       // emit 'connection' event for app (expressjs extends EventEmitter)
       app.emit('connection', connection)
