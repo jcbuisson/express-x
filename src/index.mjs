@@ -21,30 +21,50 @@ function expressX(app) {
     */
    function createDatabaseService(name, { entity=name, client='prisma' }) {
       return createService(name, {
-         create: (data) => prisma[entity].create({
-            data,
-         }),
+         create: (data) => {
+            if (isDebug) console.log('create', name, data)
+            return prisma[entity].create({
+               data,
+            })
+         },
 
-         get: (id) => prisma[entity].findUnique({
-            where: {
-               id,
-            },
-         }),
+         get: (id) => {
+            if (isDebug) console.log('get', name, id)
+            return prisma[entity].findUnique({
+               where: {
+                  id,
+               },
+            })
+         },
 
-         patch: (id, data) => prisma[entity].update({
-            where: {
-               id,
-            },
-            data,
-         }),
+         patch: (id, data) => {
+            if (isDebug) console.log('patch', name, id, data)
+            return prisma[entity].update({
+               where: {
+                  id,
+               },
+               data,
+            })
+         },
 
-         remove: (id, data) => prisma[entity].delete({
-            where: {
-               id,
-            },
-         }),
+         remove: (id) => {
+            if (isDebug) console.log('remove', name, id)
+            return prisma[entity].delete({
+               where: {
+                  id,
+               },
+            })
+         },
 
-         find: (options) => prisma[entity].findMany(options),
+         find: (options) => {
+            if (isDebug) console.log('find', name, options)
+            return prisma[entity].findMany(options)
+         },
+
+         upsert: (options) => {
+            if (isDebug) console.log('upsert', name, options)
+            return prisma[entity].upsert(options)
+         },
       })
    }
 
@@ -216,7 +236,7 @@ function expressX(app) {
                         if (isDebug) console.log('service-event', name, action, channelName)
                         const connectionList = Object.values(connections).filter(cnx => cnx.channelNames.has(channelName))
                         for (const connection of connectionList) {
-                           if (isDebug) console.log('emit to', connection.id)
+                           if (isDebug) console.log('emit to', connection.id, name, action, result)
                            connection.socket.emit('service-event', {
                               name,
                               action,
