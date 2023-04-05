@@ -79,7 +79,7 @@ function expressX(app) {
 
          // `context` is the context of execution (transport type, connection, app)
          // `args` is the list of arguments of the method
-         service['__' + methodName] = async (context, ...args) => {
+         const hookedMethod = async (context, ...args) => {
             context.args = args
 
             // if a hook or the method throws an error, it will be caught by `socket.on('client-request'`
@@ -105,8 +105,11 @@ function expressX(app) {
             return result
          }
 
+         // hooked version of method, used by client calls
+         service['__' + methodName] = hookedMethod
+
          // hooked version of method: `create`, etc., to be called from backend with no context
-         service[methodName] = method
+         service[methodName] = async (...args) => await hookedMethod({}, ...args)
 
          // un-hooked version of method: `_create`, etc., to be called from backend with no context
          service['_' + methodName] = method
