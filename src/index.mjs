@@ -81,8 +81,8 @@ function expressX(app, options) {
          service['__' + methodName] = async (context, ...args) => {
             context.args = args
 
-            // if a hook or the method throws an error, it will be caught by `socket.on('client-request'`
-            // and the client will get a rejected promise
+            // if a hook or the method throws an error, it will be caught by `socket.on('client-request'` (ws)
+            // or by express (http) and the client will get a rejected promise
 
             // call 'before' hooks, modifying `context.args`
             const beforeMethodHooks = service?.hooks?.before && service.hooks.before[methodName] || []
@@ -143,41 +143,35 @@ function expressX(app, options) {
    function addHttpRestRoutes(path, service) {
       const context = {
          app,
-         transport: 'http',
-         name: service.name,
+         http: { name: service.name }
       }
 
       app.post(path, async (req, res) => {
-         context.action = 'create'
-         context.args = [req.body]
+         context.http.req = req
          const value = await service.__create(context, req.body)
          res.json(value)
       })
 
       app.get(path, async (req, res) => {
-         context.action = 'find'
-         context.args = [req.body]
+         context.http.req = req
          const values = await service.__find(context, req.body)
          res.json(values)
       })
 
       app.get(`${path}/:id`, async (req, res) => {
-         context.action = 'get'
-         context.args = [req.params.id]
+         context.http.req = req
          const value = await service.__get(context, parseInt(req.params.id))
          res.json(value)
       })
 
       app.patch(`${path}/:id`, async (req, res) => {
-         context.action = 'patch'
-         context.args = [req.params.id, req.body]
+         context.http.req = req
          const value = await service.__patch(context, parseInt(req.params.id), req.body)
          res.json(value)
       })
 
       app.delete(`${path}/:id`, async (req, res) => {
-         context.action = 'remove'
-         context.args = [req.params.id]
+         context.http.req = req
          const value = await service.__remove(context, parseInt(req.params.id))
          res.json(value)
       })
@@ -227,11 +221,7 @@ function expressX(app, options) {
                if (serviceMethod) {
                   const context = {
                      app,
-                     transport: 'ws',
-                     connection,
-                     name,
-                     action,
-                     args,
+                     ws: { connection, name, action, args },
                   }
                   const result = await serviceMethod(context, ...args)
 
