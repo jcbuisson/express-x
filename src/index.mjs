@@ -18,7 +18,7 @@ function expressX(app, options) {
    function createDatabaseService(name, { entity=name, client='prisma' }) {
       const prisma = app.get('prisma')
       
-      return createService(name, {
+      const service = createService(name, {
          create: (data) => {
             if (options.debug) console.log('create', name, data)
             return prisma[entity].create({
@@ -63,6 +63,8 @@ function expressX(app, options) {
             return prisma[entity].upsert(options)
          },
       })
+      if (options.debug) console.log(`created service '${name}' over table '${entity}'`)
+      return service
    }
 
    /*
@@ -139,36 +141,48 @@ function expressX(app, options) {
     * add an HTTP REST endpoint at `path`, based on `service`
     */
    function addHttpRestRoutes(path, service) {
-
       const context = {
          app,
          transport: 'http',
+         name: service.name,
       }
 
       app.post(path, async (req, res) => {
+         context.action = 'create'
+         context.args = [req.body]
          const value = await service.__create(context, req.body)
          res.json(value)
       })
 
       app.get(path, async (req, res) => {
+         context.action = 'find'
+         context.args = [req.body]
          const values = await service.__find(context, req.body)
          res.json(values)
       })
 
       app.get(`${path}/:id`, async (req, res) => {
+         context.action = 'get'
+         context.args = [req.params.id]
          const value = await service.__get(context, parseInt(req.params.id))
          res.json(value)
       })
 
       app.patch(`${path}/:id`, async (req, res) => {
+         context.action = 'patch'
+         context.args = [req.params.id, req.body]
          const value = await service.__patch(context, parseInt(req.params.id), req.body)
          res.json(value)
       })
 
       app.delete(`${path}/:id`, async (req, res) => {
+         context.action = 'remove'
+         context.args = [req.params.id]
          const value = await service.__remove(context, parseInt(req.params.id))
          res.json(value)
       })
+
+      if (options.debug) console.log(`added HTTP endpoints for service '${service.name}' at path '${path}'`)
    }
 
    /*
@@ -217,6 +231,7 @@ function expressX(app, options) {
                      connection,
                      name,
                      action,
+                     args,
                   }
                   const result = await serviceMethod(context, ...args)
 
