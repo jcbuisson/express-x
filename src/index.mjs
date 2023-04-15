@@ -1,35 +1,33 @@
 
 import http from 'http'
 import { Server } from "socket.io"
-import { PrismaClient } from '@prisma/client'
 
 /*
  * Enhance `app` express application with Feathers-like services
  */
-function expressX(app) {
-   const prisma = new PrismaClient()
-   app.set('prisma', prisma) // ?? BOF
+function expressX(app, options) {
 
    const services = {}
    const connections = {}
 
    let lastConnectionId = 1
-   let isDebug = false
 
    /*
     * create a service `name` based on Prisma table `entity`
     */
    function createDatabaseService(name, { entity=name, client='prisma' }) {
+      const prisma = app.get('prisma')
+      
       return createService(name, {
          create: (data) => {
-            if (isDebug) console.log('create', name, data)
+            if (options.debug) console.log('create', name, data)
             return prisma[entity].create({
                data,
             })
          },
 
          get: (id) => {
-            if (isDebug) console.log('get', name, id)
+            if (options.debug) console.log('get', name, id)
             return prisma[entity].findUnique({
                where: {
                   id,
@@ -38,7 +36,7 @@ function expressX(app) {
          },
 
          patch: (id, data) => {
-            if (isDebug) console.log('patch', name, id, data)
+            if (options.debug) console.log('patch', name, id, data)
             return prisma[entity].update({
                where: {
                   id,
@@ -48,21 +46,20 @@ function expressX(app) {
          },
 
          remove: (id) => {
-            if (isDebug) console.log('remove', name, id)
+            if (options.debug) console.log('remove', name, id)
             return prisma[entity].delete({
                where: {
                   id,
                },
-            })
-         },
+            })},
 
          find: (options) => {
-            if (isDebug) console.log('find', name, options)
+            if (options.debug) console.log('find', name, options)
             return prisma[entity].findMany(options)
          },
 
          upsert: (options) => {
-            if (isDebug) console.log('upsert', name, options)
+            if (options.debug) console.log('upsert', name, options)
             return prisma[entity].upsert(options)
          },
       })
@@ -79,7 +76,7 @@ function expressX(app) {
 
          // `context` is the context of execution (transport type, connection, app)
          // `args` is the list of arguments of the method
-         const hookedMethod = async (context, ...args) => {
+         service['__' + methodName] = async (context, ...args) => {
             context.args = args
 
             // if a hook or the method throws an error, it will be caught by `socket.on('client-request'`
@@ -94,7 +91,7 @@ function expressX(app) {
 
             // call method
             const result = await method(...context.args)
-            // if (isDebug) console.log('result', result)
+            // if (options.debug) console.log('result', result)
 
             // call 'after' hooks
             const afterMethodHooks = service?.hooks?.after && service.hooks.after[methodName] || []
@@ -105,11 +102,8 @@ function expressX(app) {
             return result
          }
 
-         // hooked version of method, used by client calls
-         service['__' + methodName] = hookedMethod
-
          // hooked version of method: `create`, etc., to be called from backend with no context
-         service[methodName] = async (...args) => await hookedMethod({}, ...args)
+         service[methodName] = method
 
          // un-hooked version of method: `_create`, etc., to be called from backend with no context
          service['_' + methodName] = method
@@ -184,7 +178,7 @@ function expressX(app) {
    const io = new Server(server)
    
    io.on('connection', function(socket) {
-      if (isDebug) console.log('Client connected to the WebSocket')
+      if (options.debug) console.log('Client connected to the WebSocket')
       const connection = {
          id: lastConnectionId++,
          socket,
@@ -192,7 +186,7 @@ function expressX(app) {
       }
       // store connection in cache 
       connections[connection.id] = connection
-      if (isDebug) console.log('active connections', Object.keys(connections))
+      if (options.debug) console.log('active connections', Object.keys(connections))
 
       // emit 'connection' event for app (expressjs extends EventEmitter)
       app.emit('connection', connection)
@@ -201,7 +195,7 @@ function expressX(app) {
       socket.emit('connected', connection.id)
 
       socket.on('disconnect', () => {
-         if (isDebug) console.log('Client disconnected', connection.id)
+         if (options.debug) console.log('Client disconnected', connection.id)
          delete connections[connection.id]
       })
 
@@ -211,7 +205,7 @@ function expressX(app) {
        * Emit in return a 'client-response' message
        */
       socket.on('client-request', async ({ uid, name, action, args }) => {
-         if (isDebug) console.log("client-request", uid, name, action, args)
+         if (options.debug) console.log("client-request", uid, name, action, args)
          if (name in services) {
             const service = services[name]
             try {
@@ -234,12 +228,12 @@ function expressX(app) {
                   const publishFunc = service.publishCallback
                   if (publishFunc) {
                      const channelNames = await publishFunc(result, app)
-                     if (isDebug) console.log('publish channels', name, action, channelNames)
+                     if (options.debug) console.log('publish channels', name, action, channelNames)
                      for (const channelName of channelNames) {
-                        if (isDebug) console.log('service-event', name, action, channelName)
+                        if (options.debug) console.log('service-event', name, action, channelName)
                         const connectionList = Object.values(connections).filter(cnx => cnx.channelNames.has(channelName))
                         for (const connection of connectionList) {
-                           if (isDebug) console.log('emit to', connection.id, name, action, result)
+                           if (options.debug) console.log('emit to', connection.id, name, action, result)
                            connection.socket.emit('service-event', {
                               name,
                               action,
@@ -278,12 +272,9 @@ function expressX(app) {
       connection.channelNames.delete(channelName)
    }
 
-   function setDebug(isOn) {
-      isDebug = isOn
-   }
-
    // enhance `app` with objects and methods
    Object.assign(app, {
+      options,
       createDatabaseService,
       createService,
       service,
@@ -292,7 +283,6 @@ function expressX(app) {
       server,
       joinChannel,
       leaveChannel,
-      setDebug,
    })
    return app
 }
