@@ -5,7 +5,7 @@ import { Server } from "socket.io"
 /*
  * Enhance `app` express application with Feathers-like services
  */
-function expressX(app, options) {
+function expressX(app, options={ debug: true }) {
 
    const services = {}
    const connections = {}
