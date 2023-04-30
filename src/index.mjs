@@ -5,7 +5,10 @@ import { Server } from "socket.io"
 /*
  * Enhance `app` express application with Feathers-like services
  */
-function expressX(app, options={ debug: true }) {
+function expressX(app, options={}) {
+
+   if (options.debug === undefined) options.debug = true
+   if (options.ws === undefined) options.ws = { ws_prefix: "expressx" }
 
    const services = {}
    const connections = {}
@@ -180,94 +183,107 @@ function expressX(app, options={ debug: true }) {
    }
 
    /*
-    * Add websocket transport for services
-    */
+    * Create HTTP server
+   */
    const server = new http.Server(app)
-   const io = new Server(server)
-   
-   io.on('connection', function(socket) {
-      if (options.debug) console.log('Client connected to the WebSocket')
-      const connection = {
-         id: lastConnectionId++,
-         socket,
-         channelNames: new Set(),
-      }
-      // store connection in cache 
-      connections[connection.id] = connection
-      if (options.debug) console.log('active connections', Object.keys(connections))
 
-      // emit 'connection' event for app (expressjs extends EventEmitter)
-      app.emit('connection', connection)
-
-      // send 'connected' event to client
-      socket.emit('connected', connection.id)
-
-      socket.on('disconnect', () => {
-         if (options.debug) console.log('Client disconnected', connection.id)
-         delete connections[connection.id]
-      })
-
-
+   if (options.ws) {
       /*
-       * Handle websocket client request
-       * Emit in return a 'client-response' message
-       */
-      socket.on('client-request', async ({ uid, name, action, args }) => {
-         if (options.debug) console.log("client-request", uid, name, action, args)
-         if (name in services) {
-            const service = services[name]
-            try {
-               const serviceMethod = service['__' + action]
-               if (serviceMethod) {
-                  const context = {
-                     app,
-                     ws: { connection, name, action, args },
-                  }
-                  const result = await serviceMethod(context, ...args)
+      * Add websocket transport
+      */
+      const io = new Server(server)
+      
+      io.on('connection', function(socket) {
+         if (options.debug) console.log('Client connected to the WebSocket')
+         const connection = {
+            id: lastConnectionId++,
+            socket,
+            channelNames: new Set(),
+         }
+         // store connection in cache 
+         connections[connection.id] = connection
+         if (options.debug) console.log('active connections', Object.keys(connections))
 
-                  socket.emit('client-response', {
-                     uid,
-                     result,
-                  })
-                  // pub/sub: send event on associated channels
-                  const publishFunc = service.publishCallback
-                  if (publishFunc) {
-                     const channelNames = await publishFunc(result, app)
-                     if (options.debug) console.log('publish channels', name, action, channelNames)
-                     for (const channelName of channelNames) {
-                        if (options.debug) console.log('service-event', name, action, channelName)
-                        const connectionList = Object.values(connections).filter(cnx => cnx.channelNames.has(channelName))
-                        for (const connection of connectionList) {
-                           if (options.debug) console.log('emit to', connection.id, name, action, result)
-                           connection.socket.emit('service-event', {
-                              name,
-                              action,
-                              result,
-                           })
-                        }
+         // emit 'connection' event for app (expressjs extends EventEmitter)
+         app.emit('connection', connection)
+
+         // send 'connected' event to client
+         socket.emit('connected', connection.id)
+
+         socket.on('disconnect', () => {
+            if (options.debug) console.log('Client disconnected', connection.id)
+            delete connections[connection.id]
+         })
+
+
+         /*
+         * Handle websocket client request
+         * Emit in return a 'client-response' message
+         */
+         socket.on('client-request', async ({ uid, name, action, args }) => {
+            if (options.debug) console.log("client-request", uid, name, action, args)
+            if (name in services) {
+               const service = services[name]
+               try {
+                  const serviceMethod = service['__' + action]
+                  if (serviceMethod) {
+                     const context = {
+                        app,
+                        ws: { connection, name, action, args },
                      }
+
+                     try {
+                        const result = await serviceMethod(context, ...args)
+                        socket.emit('client-response', {
+                           uid,
+                           result,
+                        })
+                        // pub/sub: send event on associated channels
+                        const publishFunc = service.publishCallback
+                        if (publishFunc) {
+                           const channelNames = await publishFunc(result, app)
+                           if (options.debug) console.log('publish channels', name, action, channelNames)
+                           for (const channelName of channelNames) {
+                              if (options.debug) console.log('service-event', name, action, channelName)
+                              const connectionList = Object.values(connections).filter(cnx => cnx.channelNames.has(channelName))
+                              for (const connection of connectionList) {
+                                 if (options.debug) console.log('emit to', connection.id, name, action, result)
+                                 connection.socket.emit('service-event', {
+                                    name,
+                                    action,
+                                    result,
+                                 })
+                              }
+                           }
+                        }
+                     } catch(callErr) {
+                        console.log('callErr', callErr)
+                        io.emit('client-response', {
+                           uid,
+                           error: callErr.toString(),
+                        })
+                     }
+                  } else {
+                     io.emit('client-response', {
+                        uid,
+                        error: `there is no method named '${action}' for service '${name}'`,
+                     })
                   }
-               } else {
+               } catch(error) {
                   io.emit('client-response', {
                      uid,
-                     error: `there is no method named '${action}' for service '${name}'`,
+                     error,
                   })
                }
-            } catch(error) {
+            } else {
                io.emit('client-response', {
                   uid,
-                  error,
+                  error: `there is no service named '${name}'`,
                })
             }
-         } else {
-            io.emit('client-response', {
-               uid,
-               error: `there is no service named '${name}'`,
-            })
-         }
-      })
-
-   })
+         })
+      })      
+   }
 
    function joinChannel(channelName, connection) {
       connection.channelNames.add(channelName)
