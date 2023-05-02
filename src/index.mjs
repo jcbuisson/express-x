@@ -143,7 +143,7 @@ function expressX(app, options={}) {
    /*
     * add an HTTP REST endpoint at `path`, based on `service`
     */
-   function addHttpRestRoutes(path, service) {
+   function addHttpRest(path, service) {
       const context = {
          app,
          http: { name: service.name }
@@ -300,7 +300,7 @@ function expressX(app, options={}) {
       createService,
       service,
       configure,
-      addHttpRestRoutes,
+      addHttpRest,
       server,
       joinChannel,
       leaveChannel,
