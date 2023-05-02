@@ -1,6 +1,7 @@
 
 import http from 'http'
 import { Server } from "socket.io"
+import { PrismaClient } from '@prisma/client'
 
 /*
  * Enhance `app` express application with Feathers-like services
@@ -19,7 +20,11 @@ function expressX(app, options={}) {
     * create a service `name` based on Prisma table `entity`
     */
    function createDatabaseService(name, { entity=name, client='prisma' }) {
-      const prisma = app.get('prisma')
+      let prisma = app.get('prisma')
+      if (!prisma) {
+         prisma = new PrismaClient()
+         app.set('prisma', prisma)
+      }
       
       const service = createService(name, {
          create: (data) => {
