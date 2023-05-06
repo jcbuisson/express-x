@@ -19,7 +19,7 @@ function expressX(app, options={}) {
    /*
     * create a service `name` based on Prisma table `entity`
     */
-   function createDatabaseService(name, { entity=name, client='prisma' }) {
+   function createDatabaseService(name, { entity=name }) {
       let prisma = app.get('prisma')
       if (!prisma) {
          prisma = new PrismaClient()
@@ -71,6 +71,8 @@ function expressX(app, options={}) {
             return prisma[entity].upsert(options)
          },
       })
+      service.entity = entity
+      
       if (options.debug) console.log(`created service '${name}' over table '${entity}'`)
       return service
    }
