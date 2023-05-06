@@ -71,6 +71,7 @@ function expressX(app, options={}) {
             return prisma[entity].upsert(options)
          },
       })
+      service.prisma = prisma
       service.entity = entity
       
       if (options.debug) console.log(`created service '${name}' over table '${entity}'`)
