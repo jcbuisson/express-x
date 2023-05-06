@@ -156,32 +156,57 @@ function expressX(app, options={}) {
 
       app.post(path, async (req, res) => {
          context.http.req = req
-         const value = await service.__create(context, req.body)
-         res.json(value)
+         try {
+            const value = await service.__create(context, req.body)
+            res.json(value)
+         } catch(err) {
+            console.log('callErr', err)
+            res.status(500).send(err.toString())
+         }
       })
 
       app.get(path, async (req, res) => {
          context.http.req = req
-         const values = await service.__find(context, req.body)
-         res.json(values)
+         try {
+            const values = await service.__find(context, req.body)
+            res.json(values)
+         } catch(err) {
+            console.log('callErr', err)
+            res.status(500).send(err.toString())
+         }
       })
 
       app.get(`${path}/:id`, async (req, res) => {
          context.http.req = req
-         const value = await service.__get(context, parseInt(req.params.id))
-         res.json(value)
+         try {
+            const value = await service.__get(context, parseInt(req.params.id))
+            res.json(value)
+         } catch(err) {
+            console.log('callErr', err)
+            res.status(500).send(err.toString())
+         }
       })
 
       app.patch(`${path}/:id`, async (req, res) => {
          context.http.req = req
-         const value = await service.__patch(context, parseInt(req.params.id), req.body)
-         res.json(value)
+         try {
+            const value = await service.__patch(context, parseInt(req.params.id), req.body)
+            res.json(value)
+         } catch(err) {
+            console.log('callErr', err)
+            res.status(500).send(err.toString())
+         }
       })
 
       app.delete(`${path}/:id`, async (req, res) => {
          context.http.req = req
-         const value = await service.__remove(context, parseInt(req.params.id))
-         res.json(value)
+         try {
+            const value = await service.__remove(context, parseInt(req.params.id))
+            res.json(value)
+         } catch(err) {
+            console.log('callErr', err)
+            res.status(500).send(err.toString())
+         }
       })
 
       if (options.debug) console.log(`added HTTP endpoints for service '${service.name}' at path '${path}'`)
@@ -261,11 +286,11 @@ function expressX(app, options={}) {
                               }
                            }
                         }
-                     } catch(callErr) {
-                        console.log('callErr', callErr)
+                     } catch(err) {
+                        console.log('callErr', err)
                         io.emit('client-response', {
                            uid,
-                           error: callErr.toString(),
+                           error: err.toString(),
                         })
                      }
                   } else {
