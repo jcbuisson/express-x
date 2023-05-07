@@ -61,11 +61,16 @@ function expressX(app, options={}) {
                },
             })},
 
-         find: (options) => {
+         findMany: (options) => {
             if (options.debug) console.log('find', name, options)
             return prisma[entity].findMany(options)
          },
 
+         findUnique: (options) => {
+            if (options.debug) console.log('find', name, options)
+            return prisma[entity].findUnique(options)
+         },
+      
          upsert: (options) => {
             if (options.debug) console.log('upsert', name, options)
             return prisma[entity].upsert(options)
@@ -192,7 +197,7 @@ function expressX(app, options={}) {
             }
          }
          try {
-            const values = await service.__find(context, {
+            const values = await service.__findMany(context, {
                where: query,
             })
             res.json(values)
