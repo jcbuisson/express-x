@@ -170,8 +170,31 @@ function expressX(app, options={}) {
 
       app.get(path, async (req, res) => {
          context.http.req = req
+         const query = { ...req.query }
+         for (const fieldName in query) {
+            const fieldInfo = await service.prisma.$queryRawUnsafe(`
+               SELECT column_name, data_type
+               FROM information_schema.columns
+               WHERE table_name = '${service.entity}' AND column_name = '${fieldName}';
+            `)
+            const fieldType = fieldInfo[0].data_type
+            if (fieldType === 'integer') {
+               query[fieldName] = parseInt(query[fieldName])
+            } else if (fieldType === 'numeric') {
+               query[fieldName] = parseFloat(query[fieldName])
+            } else if (fieldType === 'boolean') {
+               query[fieldName] = (query[fieldName] === 't') ? true : false
+            } else if (fieldType === 'text' || fieldType === 'character varying') {
+               query[fieldName] = query[fieldName]
+            } else {
+               // ?
+               query[fieldName] = query[fieldName]
+            }
+         }
          try {
-            const values = await service.__find(context, req.body)
+            const values = await service.__find(context, {
+               where: query,
+            })
             res.json(values)
          } catch(err) {
             console.log('callErr', err)
