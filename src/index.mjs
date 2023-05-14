@@ -8,7 +8,7 @@ import { PrismaClient } from '@prisma/client'
  */
 function expressX(app, options={}) {
 
-   if (options.debug === undefined) options.debug = true
+   if (options.debug === undefined) options.debug = false
    if (options.ws === undefined) options.ws = { ws_prefix: "expressx" }
 
    const services = {}
@@ -19,67 +19,74 @@ function expressX(app, options={}) {
    /*
     * create a service `name` based on Prisma table `entity`
     */
-   function createDatabaseService(name, { entity=name }) {
+   function createDatabaseService(name, prismaOptions = { entity: name }) {
+
       let prisma = app.get('prisma')
       if (!prisma) {
          prisma = new PrismaClient()
          app.set('prisma', prisma)
       }
+
+      // take all prisma methods on `entity` table
+      const methods = prisma[prismaOptions.entity]
+
+      const service = createService(name, methods)
       
-      const service = createService(name, {
-         create: (data) => {
-            if (options.debug) console.log('create', name, data)
-            return prisma[entity].create({
-               data,
-            })
-         },
+      // const service0 = createService(name, {
+      //    create: (data) => {
+      //       if (options.debug) console.log('create', name, data)
+      //       return prisma[prismaOptions.entity].create({
+      //          data,
+      //       })
+      //    },
 
-         get: (id) => {
-            if (options.debug) console.log('get', name, id)
-            return prisma[entity].findUnique({
-               where: {
-                  id,
-               },
-            })
-         },
+      //    get: (id) => {
+      //       if (options.debug) console.log('get', name, id)
+      //       return prisma[prismaOptions.entity].findUnique({
+      //          where: {
+      //             id,
+      //          },
+      //       })
+      //    },
 
-         patch: (id, data) => {
-            if (options.debug) console.log('patch', name, id, data)
-            return prisma[entity].update({
-               where: {
-                  id,
-               },
-               data,
-            })
-         },
+      //    patch: (id, data) => {
+      //       if (options.debug) console.log('patch', name, id, data)
+      //       return prisma[prismaOptions.entity].update({
+      //          where: {
+      //             id,
+      //          },
+      //          data,
+      //       })
+      //    },
 
-         remove: (id) => {
-            if (options.debug) console.log('remove', name, id)
-            return prisma[entity].delete({
-               where: {
-                  id,
-               },
-            })},
+      //    remove: (id) => {
+      //       if (options.debug) console.log('remove', name, id)
+      //       return prisma[prismaOptions.entity].delete({
+      //          where: {
+      //             id,
+      //          },
+      //       })},
 
-         findMany: (options) => {
-            if (options.debug) console.log('find', name, options)
-            return prisma[entity].findMany(options)
-         },
+      //    findMany: (options) => {
+      //       if (options.debug) console.log('find', name, options)
+      //       return prisma[prismaOptions.entity].findMany(options)
+      //    },
 
-         findUnique: (options) => {
-            if (options.debug) console.log('find', name, options)
-            return prisma[entity].findUnique(options)
-         },
+      //    findUnique: (options) => {
+      //       if (options.debug) console.log('find', name, options)
+      //       return prisma[prismaOptions.entity].findUnique(options)
+      //    },
       
-         upsert: (options) => {
-            if (options.debug) console.log('upsert', name, options)
-            return prisma[entity].upsert(options)
-         },
-      })
+      //    upsert: (options) => {
+      //       if (options.debug) console.log('upsert', name, options)
+      //       return prisma[prismaOptions.entity].upsert(options)
+      //    },
+      // })
+
       service.prisma = prisma
-      service.entity = entity
+      service.entity = prismaOptions.entity
       
-      if (options.debug) console.log(`created service '${name}' over table '${entity}'`)
+      if (options.debug) console.log(`created service '${name}' over table '${prismaOptions.entity}'`)
       return service
    }
 
@@ -91,6 +98,7 @@ function expressX(app, options={}) {
 
       for (const methodName in methods) {
          const method = methods[methodName]
+         if (! method instanceof Function) continue
 
          // `context` is the context of execution (transport type, connection, app)
          // `args` is the list of arguments of the method
@@ -156,16 +164,40 @@ function expressX(app, options={}) {
    /*
     * add an HTTP REST endpoint at `path`, based on `service`
     */
-   function addHttpRest(path, service) {
+   async function addHttpRest(path, service) {
       const context = {
          app,
          http: { name: service.name }
       }
 
+      // introspect table schema
+      async function getFieldTypes() {
+         const fieldTypes = {}
+         if (service.prisma._activeProvider === 'sqlite') {
+            const fieldInfo = await service.prisma.$queryRawUnsafe(`
+               PRAGMA table_info(${service.entity})
+            `)
+            fieldInfo.forEach(column => {
+               fieldTypes[column.name] = column.type.toLowerCase()
+            })
+         } else if (service.prisma._activeProvider === 'postgresql') {
+            const fieldInfo = await service.prisma.$queryRawUnsafe(`
+               SELECT column_name, data_type
+               FROM information_schema.columns
+               WHERE table_name = '${service.entity}';
+            `)
+            fieldInfo.forEach(column => {
+               fieldTypes[column.column_name] = column.data_type
+            })
+         }
+         return fieldTypes
+      }
+
+
       app.post(path, async (req, res) => {
          context.http.req = req
          try {
-            const value = await service.__create(context, req.body)
+            const value = await service.__create(context, { data: req.body })
             res.json(value)
          } catch(err) {
             console.log('callErr', err)
@@ -176,27 +208,25 @@ function expressX(app, options={}) {
       app.get(path, async (req, res) => {
          context.http.req = req
          const query = { ...req.query }
-         for (const fieldName in query) {
-            const fieldInfo = await service.prisma.$queryRawUnsafe(`
-               SELECT column_name, data_type
-               FROM information_schema.columns
-               WHERE table_name = '${service.entity}' AND column_name = '${fieldName}';
-            `)
-            const fieldType = fieldInfo[0].data_type
-            if (fieldType === 'integer') {
-               query[fieldName] = parseInt(query[fieldName])
-            } else if (fieldType === 'numeric') {
-               query[fieldName] = parseFloat(query[fieldName])
-            } else if (fieldType === 'boolean') {
-               query[fieldName] = (query[fieldName] === 't') ? true : false
-            } else if (fieldType === 'text' || fieldType === 'character varying') {
-               query[fieldName] = query[fieldName]
-            } else {
-               // ?
-               query[fieldName] = query[fieldName]
-            }
-         }
          try {
+            for (const fieldName in query) {
+               if (!service.fieldTypes) service.fieldTypes = await getFieldTypes()
+               const fieldType = service.fieldTypes[fieldName]
+
+               if (fieldType === 'integer') {
+                  query[fieldName] = parseInt(query[fieldName])
+               } else if (fieldType === 'numeric') {
+                  query[fieldName] = parseFloat(query[fieldName])
+               } else if (fieldType === 'boolean') {
+                  query[fieldName] = (query[fieldName] === 't') ? true : false
+               } else if (fieldType === 'text' || fieldType === 'character varying') {
+                  query[fieldName] = query[fieldName]
+               } else {
+                  // ?
+                  query[fieldName] = query[fieldName]
+               }
+            }
+
             const values = await service.__findMany(context, {
                where: query,
             })
@@ -210,7 +240,11 @@ function expressX(app, options={}) {
       app.get(`${path}/:id`, async (req, res) => {
          context.http.req = req
          try {
-            const value = await service.__get(context, parseInt(req.params.id))
+            const value = await service.__findUnique(context, {
+               where: {
+                  id: parseInt(req.params.id)
+               }
+            })
             res.json(value)
          } catch(err) {
             console.log('callErr', err)
@@ -221,7 +255,12 @@ function expressX(app, options={}) {
       app.patch(`${path}/:id`, async (req, res) => {
          context.http.req = req
          try {
-            const value = await service.__patch(context, parseInt(req.params.id), req.body)
+            const value = await service.__update(context, {
+               where: {
+                  id: parseInt(req.params.id),
+               },
+               data: req.body,
+            })
             res.json(value)
          } catch(err) {
             console.log('callErr', err)
