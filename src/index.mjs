@@ -220,7 +220,11 @@ function expressX(app, options={}) {
       app.delete(`${path}/:id`, async (req, res) => {
          context.http.req = req
          try {
-            const value = await service.__remove(context, parseInt(req.params.id))
+            const value = await service.__delete(context, {
+               where: {
+                  id: parseInt(req.params.id)
+               }
+            })
             res.json(value)
          } catch(err) {
             console.log('callErr', err)

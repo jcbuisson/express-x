@@ -19,7 +19,6 @@ describe('ExpressX API', () => {
 
    it("can delete all users", async () => {
       const res = await app.service('User').deleteMany()
-      console.log('res', res)
       assert('chris' === 'chris')
    })
 
@@ -37,7 +36,7 @@ describe('ExpressX API', () => {
       const users = await app.service('User').findMany({
          where: {
             name: {
-               startsWith: "chris"
+               startsWith: "ch"
             }
          }
       })
@@ -65,12 +64,12 @@ describe('HTTP/REST API', () => {
    app.addHttpRest('/api/user', app.service('User'))
    app.addHttpRest('/api/post', app.service('Post'))
 
-   app.server.listen(8000, () => console.log(`App listening at http://localhost:8000`))
+   app.server.listen(8008, () => console.log(`App listening at http://localhost:8008`))
 
    let chris
 
    it("can create a user", async () => {
-      const res = await axios.post('http://localhost:8000/api/user', {
+      const res = await axios.post('http://localhost:8008/api/user', {
          name: "carole",
          email: 'carole@mail.fr'
       })
@@ -78,27 +77,34 @@ describe('HTTP/REST API', () => {
    })
 
    it("can find users", async () => {
-      const res = await axios.get('http://localhost:8000/api/user')
+      const res = await axios.get('http://localhost:8008/api/user')
       assert(res?.data?.length > 0)
    })
 
    it("can find a user by name", async () => {
-      const res = await axios.get('http://localhost:8000/api/user?name=chris')
+      const res = await axios.get('http://localhost:8008/api/user?name=chris')
       assert(res?.data?.length > 0)
       chris = res.data[0]
    })
 
    it("can find a user by id", async () => {
-      const res = await axios.get(`http://localhost:8000/api/user/${chris.id}`)
+      const res = await axios.get(`http://localhost:8008/api/user/${chris.id}`)
       assert(res?.data?.id === chris.id)
    })
 
    it("can patch a user", async () => {
-      const res = await axios.patch(`http://localhost:8000/api/user/${chris.id}`, {
-         name: "Christiophe",
+      const res = await axios.patch(`http://localhost:8008/api/user/${chris.id}`, {
+         name: "Christophe",
       })
       assert(res?.data?.name === "Christophe")
    })
-})
 
-process.exit(0)
+   it("can delete a user", async () => {
+      const res = await axios.delete(`http://localhost:8008/api/user/${chris.id}`)
+      assert(res?.data?.name === "Christophe")
+   })
+
+   it("can stop server", () => {
+      app.server.close()
+   })
+})
