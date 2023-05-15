@@ -18,6 +18,5 @@ model Post {
 
 datasource db {
    provider = "sqlite"
-   // url      = "file:./dev.db"
-   url="postgresql://chris:eureka31@localhost:5432/harrypotter?schema=public"
+   url      = "file:./dev.db"
 }
