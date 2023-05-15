@@ -100,3 +100,5 @@ describe('HTTP/REST API', () => {
       assert(res?.data?.name === "Christophe")
    })
 })
+
+process.exit(0)

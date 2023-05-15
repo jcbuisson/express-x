@@ -32,57 +32,6 @@ function expressX(app, options={}) {
 
       const service = createService(name, methods)
       
-      // const service0 = createService(name, {
-      //    create: (data) => {
-      //       if (options.debug) console.log('create', name, data)
-      //       return prisma[prismaOptions.entity].create({
-      //          data,
-      //       })
-      //    },
-
-      //    get: (id) => {
-      //       if (options.debug) console.log('get', name, id)
-      //       return prisma[prismaOptions.entity].findUnique({
-      //          where: {
-      //             id,
-      //          },
-      //       })
-      //    },
-
-      //    patch: (id, data) => {
-      //       if (options.debug) console.log('patch', name, id, data)
-      //       return prisma[prismaOptions.entity].update({
-      //          where: {
-      //             id,
-      //          },
-      //          data,
-      //       })
-      //    },
-
-      //    remove: (id) => {
-      //       if (options.debug) console.log('remove', name, id)
-      //       return prisma[prismaOptions.entity].delete({
-      //          where: {
-      //             id,
-      //          },
-      //       })},
-
-      //    findMany: (options) => {
-      //       if (options.debug) console.log('find', name, options)
-      //       return prisma[prismaOptions.entity].findMany(options)
-      //    },
-
-      //    findUnique: (options) => {
-      //       if (options.debug) console.log('find', name, options)
-      //       return prisma[prismaOptions.entity].findUnique(options)
-      //    },
-      
-      //    upsert: (options) => {
-      //       if (options.debug) console.log('upsert', name, options)
-      //       return prisma[prismaOptions.entity].upsert(options)
-      //    },
-      // })
-
       service.prisma = prisma
       service.entity = prismaOptions.entity
       
