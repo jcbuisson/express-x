@@ -19,7 +19,7 @@ describe('ExpressX API', () => {
 
    it("can delete all users", async () => {
       const res = await app.service('User').deleteMany()
-      assert('chris' === 'chris')
+      assert(res.count === 1)
    })
 
    it("can create a user", async () => {

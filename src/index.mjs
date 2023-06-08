@@ -147,6 +147,7 @@ function expressX(app, options={}) {
          context.http.req = req
          try {
             const value = await service.__create(context, { data: req.body })
+            publish(service, 'create', value)
             res.json(value)
          } catch(err) {
             console.log('callErr', err)
@@ -158,6 +159,8 @@ function expressX(app, options={}) {
          context.http.req = req
          const query = { ...req.query }
          try {
+            // the values in `req.query` are all strings, but Prisma need proper types
+            // we need to introspect column types and do the proper transtyping
             for (const fieldName in query) {
                if (!service.fieldTypes) service.fieldTypes = await getFieldTypes()
                const fieldType = service.fieldTypes[fieldName]
@@ -179,6 +182,7 @@ function expressX(app, options={}) {
             const values = await service.__findMany(context, {
                where: query,
             })
+            publish(service, 'findMany', values)
             res.json(values)
          } catch(err) {
             console.log('callErr', err)
@@ -194,6 +198,7 @@ function expressX(app, options={}) {
                   id: parseInt(req.params.id)
                }
             })
+            publish(service, 'findUnique', value)
             res.json(value)
          } catch(err) {
             console.log('callErr', err)
@@ -210,6 +215,7 @@ function expressX(app, options={}) {
                },
                data: req.body,
             })
+            publish(service, 'update', value)
             res.json(value)
          } catch(err) {
             console.log('callErr', err)
@@ -225,6 +231,7 @@ function expressX(app, options={}) {
                   id: parseInt(req.params.id)
                }
             })
+            publish(service, 'delete', value)
             res.json(value)
          } catch(err) {
             console.log('callErr', err)
@@ -292,23 +299,7 @@ function expressX(app, options={}) {
                            result,
                         })
                         // pub/sub: send event on associated channels
-                        const publishFunc = service.publishCallback
-                        if (publishFunc) {
-                           const channelNames = await publishFunc(result, app)
-                           if (options.debug) console.log('publish channels', name, action, channelNames)
-                           for (const channelName of channelNames) {
-                              if (options.debug) console.log('service-event', name, action, channelName)
-                              const connectionList = Object.values(connections).filter(cnx => cnx.channelNames.has(channelName))
-                              for (const connection of connectionList) {
-                                 if (options.debug) console.log('emit to', connection.id, name, action, result)
-                                 connection.socket.emit('service-event', {
-                                    name,
-                                    action,
-                                    result,
-                                 })
-                              }
-                           }
-                        }
+                        publish(service, action, result)
                      } catch(err) {
                         console.log('callErr', err)
                         io.emit('client-response', {
@@ -336,6 +327,28 @@ function expressX(app, options={}) {
             }
          })
       })      
+   }
+
+   // publish event on associated channels
+   async function publish(service, action, result) {
+      console.log('PUB!')
+      const publishFunc = service.publishCallback
+      if (publishFunc) {
+         const channelNames = await publishFunc(result, app)
+         if (options.debug) console.log('publish channels', service.name, action, channelNames)
+         for (const channelName of channelNames) {
+            if (options.debug) console.log('service-event', service.name, action, channelName)
+            const connectionList = Object.values(connections).filter(cnx => cnx.channelNames.has(channelName))
+            for (const connection of connectionList) {
+               if (options.debug) console.log('emit to', connection.id, service.name, action, result)
+               connection.socket.emit('service-event', {
+                  name: service.name,
+                  action,
+                  result,
+               })
+            }
+         }
+      }
    }
 
    function joinChannel(channelName, connection) {
