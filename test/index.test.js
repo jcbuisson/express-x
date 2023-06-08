@@ -1,10 +1,14 @@
 
-import expressX from '../src/index.mjs'
 import express from 'express'
 import bodyParser from 'body-parser'
 import axios from 'axios'
+import io from 'socket.io-client'
+import expressxClient from '@jcbuisson/express-x-client'
+
 
 import { expect, assert } from 'chai'
+
+import expressX from '../src/index.mjs'
 
 
 // `app` is a regular express application, enhanced with express-x features
@@ -15,7 +19,7 @@ app.createDatabaseService('Post')
 
 
 
-describe('ExpressX API', () => {
+describe('ExpressX API (no running server)', () => {
 
    it("can delete all users", async () => {
       const res = await app.service('User').deleteMany()
@@ -56,17 +60,19 @@ describe('ExpressX API', () => {
 
 describe('HTTP/REST API', () => {
 
-   // add body parsers for http requests
-   app.use(bodyParser.json())
-   app.use(bodyParser.urlencoded({ extended: false }))
-
-   // add http/rest endpoints
-   app.addHttpRest('/api/user', app.service('User'))
-   app.addHttpRest('/api/post', app.service('Post'))
-
-   app.server.listen(8008, () => console.log(`App listening at http://localhost:8008`))
-
    let chris
+
+   before(() => {
+      // add body parsers for http requests
+      app.use(bodyParser.json())
+      app.use(bodyParser.urlencoded({ extended: false }))
+
+      // add http/rest endpoints
+      app.addHttpRest('/api/user', app.service('User'))
+      app.addHttpRest('/api/post', app.service('Post'))
+
+      app.server.listen(8008, () => console.log(`App listening at http://localhost:8008`))
+   })
 
    it("can create a user", async () => {
       const res = await axios.post('http://localhost:8008/api/user', {
@@ -104,7 +110,36 @@ describe('HTTP/REST API', () => {
       assert(res?.data?.name === "Christophe")
    })
 
-   it("can stop server", () => {
-      app.server.close()
+   after(async () => {
+      await app.server.close()
+   })
+})
+
+
+// test compatibility with `express-x-client`
+describe('Client API', () => {
+
+   let clientApp, socket
+
+   before(() => {
+      app.server.listen(8008, () => console.log(`App listening at http://localhost:8008`))
+
+      socket = io('http://localhost:8008', { transports: ["websocket"] })
+      clientApp = expressxClient(socket)
+   })
+
+   it("can create a user", async () => {
+      const user = await clientApp.service('User').create({
+         data: {
+            name: "chris",
+            email: 'chris@mail.fr'
+         },
+      })
+      assert(user.name === 'chris')
+   })
+
+   after(async () => {
+      await socket.close()
+      await app.server.close()
    })
 })

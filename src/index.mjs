@@ -144,6 +144,7 @@ function expressX(app, options={}) {
 
 
       app.post(path, async (req, res) => {
+         if (options.debug) console.log("http request POST", req)
          context.http.req = req
          try {
             const value = await service.__create(context, { data: req.body })
@@ -156,6 +157,7 @@ function expressX(app, options={}) {
       })
 
       app.get(path, async (req, res) => {
+         if (options.debug) console.log("http request GET", req)
          context.http.req = req
          const query = { ...req.query }
          try {
@@ -191,6 +193,7 @@ function expressX(app, options={}) {
       })
 
       app.get(`${path}/:id`, async (req, res) => {
+         if (options.debug) console.log("http request GET", req)
          context.http.req = req
          try {
             const value = await service.__findUnique(context, {
@@ -207,6 +210,7 @@ function expressX(app, options={}) {
       })
 
       app.patch(`${path}/:id`, async (req, res) => {
+         if (options.debug) console.log("http request PATCH", req)
          context.http.req = req
          try {
             const value = await service.__update(context, {
@@ -224,6 +228,7 @@ function expressX(app, options={}) {
       })
 
       app.delete(`${path}/:id`, async (req, res) => {
+         if (options.debug) console.log("http request DELETE", req)
          context.http.req = req
          try {
             const value = await service.__delete(context, {
@@ -331,7 +336,6 @@ function expressX(app, options={}) {
 
    // publish event on associated channels
    async function publish(service, action, result) {
-      console.log('PUB!')
       const publishFunc = service.publishCallback
       if (publishFunc) {
          const channelNames = await publishFunc(result, app)
