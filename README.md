@@ -35,10 +35,10 @@ backed in a [Prisma](https://www.prisma.io/) database
 // app.js
 import express from 'express'
 import bodyParser from 'body-parser'
-import expressX from '@jcbuisson/express-x'
+import { expressXServer } from '@jcbuisson/express-x'
 
 // `app` is a regular express application, enhanced with express-x features
-const app = expressX(express())
+const app = expressXServer(express(), { debug: true })
 
 // create two CRUD database services. They provide Prisma methods: `create`, 'createMany', 'find', 'findMany', 'upsert', etc.
 app.createDatabaseService('User')
@@ -126,22 +126,16 @@ With a few lines of code, we got a complete REST API over the database tables. B
 
 ## Use it with a websocket client
 
-First install ExpressX client library:
-
-```bash
-npm i @jcbuisson/express-x-client
-```
-
 Create the following client NodeJS script:
 
 ```js
 // client.js
 import io from 'socket.io-client'
-import expressxClient from '@jcbuisson/express-x-client'
+import { expressXClient } from '@jcbuisson/express-x'
 
 const socket = io('http://localhost:8000', { transports: ["websocket"] })
 
-const app = expressxClient(socket)
+const app = expressXClient(socket)
 
 async function main() {
    const user = await app.service('User').create({
@@ -180,7 +174,7 @@ node client.js
 ```
 
 It prints the following lines in the console:
-```
+```json
 joe {
   id: 11,
   name: 'Joe',
@@ -219,11 +213,11 @@ and then broacasted to all connected clients, leading to real-time updates.
 ```js
 // app.js
 import express from 'express'
-import expressX from '@jcbuisson/express-x'
+import { expressXServer } from '@jcbuisson/express-x'
 import { PrismaClient } from '@prisma/client'
 
 // `app` is a regular express application, enhanced with express-x features
-const app = expressX(express())
+const app = expressXServer(express())
 
 // configure prisma client from schema
 app.set('prisma', new PrismaClient())
@@ -252,7 +246,6 @@ app.server.listen(8000, () => console.log(`App listening at http://localhost:800
 Here is how a client may listen to channel events:
 
 ```js
-// client.js
 ...
 app.service('Post').on('create', post => {
    console.log('post event created', post)
