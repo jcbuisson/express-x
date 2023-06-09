@@ -7,7 +7,7 @@ import { PrismaClient } from '@prisma/client'
 /*
  * Enhance `app` express application with services and real-time features
  */
-export function expressX(options={ debug: false }) {
+export function expressX(options = {}) {
 
    const app = express()
 
