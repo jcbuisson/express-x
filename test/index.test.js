@@ -6,11 +6,11 @@ import io from 'socket.io-client'
 
 import { assert } from 'chai'
 
-import { expressXServer, expressXClient } from '../src/index.mjs'
+import { expressX, expressXClient } from '../src/index.mjs'
 
 
 // `app` is a regular express application, enhanced with services and real-time features
-const app = expressXServer({ debug: false })
+const app = expressX()
 
 app.createDatabaseService('User')
 app.createDatabaseService('Post')

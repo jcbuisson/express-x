@@ -7,11 +7,11 @@ import { PrismaClient } from '@prisma/client'
 /*
  * Enhance `app` express application with services and real-time features
  */
-export function expressXServer(options={}) {
+export function expressX(options={ debug: false }) {
 
    const app = express()
 
-   if (options.debug === undefined) options.debug = false
+   if (options.debug === undefined) options.debug = true
    if (options.ws === undefined) options.ws = { ws_prefix: "expressx" }
 
    const services = {}
@@ -147,7 +147,7 @@ export function expressXServer(options={}) {
 
 
       app.post(path, async (req, res) => {
-         if (options.debug) console.log("http request POST", req)
+         if (options.debug) console.log("http request POST", req.url)
          context.http.req = req
          try {
             const value = await service.__create(context, { data: req.body })
@@ -160,7 +160,7 @@ export function expressXServer(options={}) {
       })
 
       app.get(path, async (req, res) => {
-         if (options.debug) console.log("http request GET", req)
+         if (options.debug) console.log("http request GET", req.url)
          context.http.req = req
          const query = { ...req.query }
          try {
@@ -196,7 +196,7 @@ export function expressXServer(options={}) {
       })
 
       app.get(`${path}/:id`, async (req, res) => {
-         if (options.debug) console.log("http request GET", req)
+         if (options.debug) console.log("http request GET", req.url)
          context.http.req = req
          try {
             const value = await service.__findUnique(context, {
@@ -213,7 +213,7 @@ export function expressXServer(options={}) {
       })
 
       app.patch(`${path}/:id`, async (req, res) => {
-         if (options.debug) console.log("http request PATCH", req)
+         if (options.debug) console.log("http request PATCH", req.url)
          context.http.req = req
          try {
             const value = await service.__update(context, {
@@ -231,7 +231,7 @@ export function expressXServer(options={}) {
       })
 
       app.delete(`${path}/:id`, async (req, res) => {
-         if (options.debug) console.log("http request DELETE", req)
+         if (options.debug) console.log("http request DELETE", req.url)
          context.http.req = req
          try {
             const value = await service.__delete(context, {
