@@ -33,12 +33,11 @@ backed in a [Prisma](https://www.prisma.io/) database
 
 ```js
 // app.js
-import express from 'express'
 import bodyParser from 'body-parser'
 import { expressXServer } from '@jcbuisson/express-x'
 
-// `app` is a regular express application, enhanced with express-x features
-const app = expressXServer(express(), { debug: true })
+// `app` is a regular express application, enhanced with service and real-time features
+const app = expressX()
 
 // create two CRUD database services. They provide Prisma methods: `create`, 'createMany', 'find', 'findMany', 'upsert', etc.
 app.createDatabaseService('User')
@@ -212,12 +211,11 @@ and then broacasted to all connected clients, leading to real-time updates.
 
 ```js
 // app.js
-import express from 'express'
 import { expressXServer } from '@jcbuisson/express-x'
 import { PrismaClient } from '@prisma/client'
 
-// `app` is a regular express application, enhanced with express-x features
-const app = expressXServer(express())
+// `app` is a regular express application, enhanced with service and real-time features
+const app = expressX()
 
 // configure prisma client from schema
 app.set('prisma', new PrismaClient())
