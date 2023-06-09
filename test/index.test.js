@@ -1,5 +1,4 @@
 
-import express from 'express'
 import bodyParser from 'body-parser'
 import axios from 'axios'
 import io from 'socket.io-client'
@@ -10,8 +9,8 @@ import { assert } from 'chai'
 import { expressXServer, expressXClient } from '../src/index.mjs'
 
 
-// `app` is a regular express application, enhanced with express-x features
-const app = expressXServer(express(), { debug: false })
+// `app` is a regular express application, enhanced with services and real-time features
+const app = expressXServer({ debug: false })
 
 app.createDatabaseService('User')
 app.createDatabaseService('Post')

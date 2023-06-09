@@ -1,12 +1,15 @@
 
 import http from 'http'
 import { Server } from "socket.io"
+import express from 'express'
 import { PrismaClient } from '@prisma/client'
 
 /*
- * Enhance `app` express application with Feathers-like services
+ * Enhance `app` express application with services and real-time features
  */
-export function expressXServer(app, options={}) {
+export function expressXServer(options={}) {
+
+   const app = express()
 
    if (options.debug === undefined) options.debug = false
    if (options.ws === undefined) options.ws = { ws_prefix: "expressx" }
