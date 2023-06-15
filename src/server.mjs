@@ -37,7 +37,7 @@ export function expressX(options = {}) {
       service.prisma = prisma
       service.entity = prismaOptions.entity
       
-      if (options.logger) options.logger.log('info', `created service '${name}' over table '${prismaOptions.entity}'`)
+      if (app.get('logger')) app.get('logger').log('info', `created service '${name}' over table '${prismaOptions.entity}'`)
       return service
    }
 
@@ -68,7 +68,7 @@ export function expressX(options = {}) {
 
             // call method
             const result = await method(...context.args)
-            // if (options.logger) options.logger.log('info', 'result', result)
+            // if (app.get('logger')) app.get('logger').log('info', 'result', result)
 
             // call 'after' hooks
             const afterMethodHooks = service?.hooks?.after && service.hooks.after[methodName] || []
@@ -146,7 +146,7 @@ export function expressX(options = {}) {
 
 
       app.post(path, async (req, res) => {
-         if (options.logger) options.logger.log('info', "http request POST", req.url)
+         if (app.get('logger')) app.get('logger').log('info', "http request POST", req.url)
          context.http.req = req
          try {
             const value = await service.__create(context, { data: req.body })
@@ -159,7 +159,7 @@ export function expressX(options = {}) {
       })
 
       app.get(path, async (req, res) => {
-         if (options.logger) options.logger.log('info', "http request GET", req.url)
+         if (app.get('logger')) app.get('logger').log('info', "http request GET", req.url)
          context.http.req = req
          const query = { ...req.query }
          try {
@@ -195,7 +195,7 @@ export function expressX(options = {}) {
       })
 
       app.get(`${path}/:id`, async (req, res) => {
-         if (options.logger) options.logger.log('info', "http request GET", req.url)
+         if (app.get('logger')) app.get('logger').log('info', "http request GET", req.url)
          context.http.req = req
          try {
             const value = await service.__findUnique(context, {
@@ -212,7 +212,7 @@ export function expressX(options = {}) {
       })
 
       app.patch(`${path}/:id`, async (req, res) => {
-         if (options.logger) options.logger.log('info', "http request PATCH", req.url)
+         if (app.get('logger')) app.get('logger').log('info', "http request PATCH", req.url)
          context.http.req = req
          try {
             const value = await service.__update(context, {
@@ -230,7 +230,7 @@ export function expressX(options = {}) {
       })
 
       app.delete(`${path}/:id`, async (req, res) => {
-         if (options.logger) options.logger.log('info', "http request DELETE", req.url)
+         if (app.get('logger')) app.get('logger').log('info', "http request DELETE", req.url)
          context.http.req = req
          try {
             const value = await service.__delete(context, {
@@ -246,7 +246,7 @@ export function expressX(options = {}) {
          }
       })
 
-      if (options.logger) options.logger.log('info', `added HTTP endpoints for service '${service.name}' at path '${path}'`)
+      if (app.get('logger')) app.get('logger').log('info', `added HTTP endpoints for service '${service.name}' at path '${path}'`)
    }
 
    /*
@@ -261,7 +261,7 @@ export function expressX(options = {}) {
       const io = new Server(server)
       
       io.on('connection', function(socket) {
-         if (options.logger) options.logger.log('info', 'Client connected to the WebSocket')
+         if (app.get('logger')) app.get('logger').log('info', 'Client connected to the WebSocket')
          const connection = {
             id: lastConnectionId++,
             socket,
@@ -269,7 +269,7 @@ export function expressX(options = {}) {
          }
          // store connection in cache 
          connections[connection.id] = connection
-         if (options.logger) options.logger.log('info', 'active connections', Object.keys(connections))
+         if (app.get('logger')) app.get('logger').log('info', 'active connections', Object.keys(connections))
 
          // emit 'connection' event for app (expressjs extends EventEmitter)
          app.emit('connection', connection)
@@ -278,7 +278,7 @@ export function expressX(options = {}) {
          socket.emit('connected', connection.id)
 
          socket.on('disconnect', () => {
-            if (options.logger) options.logger.log('info', 'Client disconnected', connection.id)
+            if (app.get('logger')) app.get('logger').log('info', 'Client disconnected', connection.id)
             delete connections[connection.id]
          })
 
@@ -288,7 +288,7 @@ export function expressX(options = {}) {
          * Emit in return a 'client-response' message
          */
          socket.on('client-request', async ({ uid, name, action, args }) => {
-            if (options.logger) options.logger.log('info', "client-request", uid, name, action, args)
+            if (app.get('logger')) app.get('logger').log('info', "client-request", uid, name, action, args)
             if (name in services) {
                const service = services[name]
                try {
@@ -341,12 +341,12 @@ export function expressX(options = {}) {
       const publishFunc = service.publishCallback
       if (publishFunc) {
          const channelNames = await publishFunc(result, app)
-         if (options.logger) options.logger.log('info', 'publish channels', service.name, action, channelNames)
+         if (app.get('logger')) app.get('logger').log('info', 'publish channels', service.name, action, channelNames)
          for (const channelName of channelNames) {
-            if (options.logger) options.logger.log('info', 'service-event', service.name, action, channelName)
+            if (app.get('logger')) app.get('logger').log('info', 'service-event', service.name, action, channelName)
             const connectionList = Object.values(connections).filter(cnx => cnx.channelNames.has(channelName))
             for (const connection of connectionList) {
-               if (options.logger) options.logger.log('info', 'emit to', connection.id, service.name, action, result)
+               if (app.get('logger')) app.get('logger').log('info', 'emit to', connection.id, service.name, action, result)
                connection.socket.emit('service-event', {
                   name: service.name,
                   action,
