@@ -19,13 +19,13 @@ export function expressXClient(socket, options={}) {
 
    // on connection
    socket.on("connected", async (connectionId) => {
-      if (app.get('logger')) app.get('logger').log('info', 'connected', connectionId)
+      if (options.debug) console.log('connected', connectionId)
       if (onConnectionCallback) onConnectionCallback(connectionId)
    })
 
    // on receiving response from service request
    socket.on('client-response', ({ uid, error, result }) => {
-      if (app.get('logger')) app.get('logger').log('info', 'client-response', uid, error, result)
+      if (options.debug) console.log('client-response', uid, error, result)
       if (!waitingPromisesByUid[uid]) return // may not exist because a timeout removed it
       const [resolve, reject] = waitingPromisesByUid[uid]
       if (error) {
