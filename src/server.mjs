@@ -19,9 +19,9 @@ export function expressX(options = {}) {
    let lastConnectionId = 1
 
    // logging function - a winston logger must be configured first
-   app.log = (severity, ...messages) => {
+   app.log = (severity, message) => {
       const logger = app.get('logger')
-      if (logger) logger.log(severity, ...messages)
+      if (logger) logger.log(severity, message)
    }
 
    /*
@@ -74,7 +74,7 @@ export function expressX(options = {}) {
 
             // call method
             const result = await method(...context.args)
-            app.log('debug', 'result', result)
+            app.log('debug', `result ${result}`)
 
             // call 'after' hooks
             const afterMethodHooks = service?.hooks?.after && service.hooks.after[methodName] || []
@@ -152,20 +152,20 @@ export function expressX(options = {}) {
 
 
       app.post(path, async (req, res) => {
-         app.log('verbose', "http request POST", req.url)
+         app.log('verbose', `http request POST ${req.url}`)
          context.http.req = req
          try {
             const value = await service.__create(context, { data: req.body })
             publish(service, 'create', value)
             res.json(value)
          } catch(err) {
-            console.log('callErr', err)
+            app.log('error', err)
             res.status(500).send(err.toString())
          }
       })
 
       app.get(path, async (req, res) => {
-         app.log('verbose', "http request GET", req.url)
+         app.log('verbose', `http request GET ${req.url}`)
          context.http.req = req
          const query = { ...req.query }
          try {
@@ -195,13 +195,13 @@ export function expressX(options = {}) {
             publish(service, 'findMany', values)
             res.json(values)
          } catch(err) {
-            console.log('callErr', err)
+            app.log('error', err)
             res.status(500).send(err.toString())
          }
       })
 
       app.get(`${path}/:id`, async (req, res) => {
-         app.log('verbose', "http request GET", req.url)
+         app.log('verbose', `http request GET ${req.url}`)
          context.http.req = req
          try {
             const value = await service.__findUnique(context, {
@@ -212,13 +212,13 @@ export function expressX(options = {}) {
             publish(service, 'findUnique', value)
             res.json(value)
          } catch(err) {
-            console.log('callErr', err)
+            app.log('error', err)
             res.status(500).send(err.toString())
          }
       })
 
       app.patch(`${path}/:id`, async (req, res) => {
-         app.log('verbose', "http request PATCH", req.url)
+         app.log('verbose', `http request PATCH ${req.url}`)
          context.http.req = req
          try {
             const value = await service.__update(context, {
@@ -230,13 +230,13 @@ export function expressX(options = {}) {
             publish(service, 'update', value)
             res.json(value)
          } catch(err) {
-            console.log('callErr', err)
+            app.log('error', err)
             res.status(500).send(err.toString())
          }
       })
 
       app.delete(`${path}/:id`, async (req, res) => {
-         app.log('verbose', "http request DELETE", req.url)
+         app.log('verbose', `http request DELETE ${req.url}`)
          context.http.req = req
          try {
             const value = await service.__delete(context, {
@@ -247,7 +247,7 @@ export function expressX(options = {}) {
             publish(service, 'delete', value)
             res.json(value)
          } catch(err) {
-            console.log('callErr', err)
+            app.log('error', err)
             res.status(500).send(err.toString())
          }
       })
@@ -275,7 +275,7 @@ export function expressX(options = {}) {
          }
          // store connection in cache 
          connections[connection.id] = connection
-         app.log('verbose', 'active connections', Object.keys(connections))
+         app.log('verbose', `active connections ${Object.keys(connections)}`)
 
          // emit 'connection' event for app (expressjs extends EventEmitter)
          app.emit('connection', connection)
@@ -284,7 +284,7 @@ export function expressX(options = {}) {
          socket.emit('connected', connection.id)
 
          socket.on('disconnect', () => {
-            app.log('verbose', 'Client disconnected', connection.id)
+            app.log('verbose', `Client disconnected ${connection.id}`)
             delete connections[connection.id]
          })
 
@@ -294,7 +294,7 @@ export function expressX(options = {}) {
          * Emit in return a 'client-response' message
          */
          socket.on('client-request', async ({ uid, name, action, args }) => {
-            app.log('verbose', "client-request", uid, name, action, args)
+            app.log('verbose', `client-request ${uid} ${name} ${action} ${args}`)
             if (name in services) {
                const service = services[name]
                try {
@@ -314,7 +314,7 @@ export function expressX(options = {}) {
                         // pub/sub: send event on associated channels
                         publish(service, action, result)
                      } catch(err) {
-                        console.log('callErr', err)
+                        app.log('error', err)
                         io.emit('client-response', {
                            uid,
                            error: err.toString(),
@@ -347,12 +347,12 @@ export function expressX(options = {}) {
       const publishFunc = service.publishCallback
       if (publishFunc) {
          const channelNames = await publishFunc(result, app)
-         app.log('verbose', 'publish channels', service.name, action, channelNames)
+         app.log('verbose', `publish channels ${service.name} ${action} ${channelNames}`)
          for (const channelName of channelNames) {
-            app.log('verbose', 'service-event', service.name, action, channelName)
+            app.log('verbose', `service-event ${service.name} ${action} ${channelName}`)
             const connectionList = Object.values(connections).filter(cnx => cnx.channelNames.has(channelName))
             for (const connection of connectionList) {
-               app.log('verbose', 'emit to', connection.id, service.name, action, result)
+               app.log('verbose', `emit to ${connection.id} ${service.name} ${action} ${result}`)
                connection.socket.emit('service-event', {
                   name: service.name,
                   action,
