@@ -75,7 +75,7 @@ export function expressX(options = {}) {
             // call method
             const result = await method(...context.args)
             app.log('debug', `result ${result}`)
-
+   
             // call 'after' hooks
             const afterMethodHooks = service?.hooks?.after && service.hooks.after[methodName] || []
             const afterAllHooks = service?.hooks?.after?.all || []
@@ -127,27 +127,14 @@ export function expressX(options = {}) {
          http: { name: service.name }
       }
 
-      // introspect table schema
-      async function getFieldTypes() {
-         const fieldTypes = {}
-         if (service.prisma._activeProvider === 'sqlite') {
-            const fieldInfo = await service.prisma.$queryRawUnsafe(`
-               PRAGMA table_info(${service.entity})
-            `)
-            fieldInfo.forEach(column => {
-               fieldTypes[column.name] = column.type.toLowerCase()
-            })
-         } else if (service.prisma._activeProvider === 'postgresql') {
-            const fieldInfo = await service.prisma.$queryRawUnsafe(`
-               SELECT column_name, data_type
-               FROM information_schema.columns
-               WHERE table_name = '${service.entity}';
-            `)
-            fieldInfo.forEach(column => {
-               fieldTypes[column.column_name] = column.data_type
-            })
-         }
-         return fieldTypes
+      // introspect schema
+      async function getTypesMap() {
+         const dmmf = await service.prisma._getDmmf()
+         const fieldDescriptions = dmmf.modelMap[service.name].fields
+         return fieldDescriptions.reduce((accu, descr) => {
+            accu[descr.name] = descr.type
+            return accu
+         }, {})
       }
 
 
@@ -172,23 +159,23 @@ export function expressX(options = {}) {
             // the values in `req.query` are all strings, but Prisma need proper types
             // we need to introspect column types and do the proper transtyping
             for (const fieldName in query) {
-               if (!service.fieldTypes) service.fieldTypes = await getFieldTypes()
-               const fieldType = service.fieldTypes[fieldName]
+               const typesDict = await getTypesMap()
+               const fieldType = typesDict[fieldName]
 
-               if (fieldType === 'integer') {
+               if (fieldType === 'Int') {
                   query[fieldName] = parseInt(query[fieldName])
-               } else if (fieldType === 'numeric') {
+               } else if (fieldType === 'Float') {
                   query[fieldName] = parseFloat(query[fieldName])
-               } else if (fieldType === 'boolean') {
+               } else if (fieldType === 'Boolean') {
                   query[fieldName] = (query[fieldName] === 't') ? true : false
-               } else if (fieldType === 'text' || fieldType === 'character varying') {
+               } else if (fieldType === 'String') {
                   query[fieldName] = query[fieldName]
                } else {
                   // ?
                   query[fieldName] = query[fieldName]
                }
             }
-
+            // call __findMany
             const values = await service.__findMany(context, {
                where: query,
             })

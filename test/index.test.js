@@ -4,7 +4,9 @@ import axios from 'axios'
 import io from 'socket.io-client'
 
 
-import { assert } from 'chai'
+// import { assert } from 'chai'
+import { describe, it, before, after, beforeEach, afterEach } from 'node:test'
+import { strict as assert } from 'node:assert'
 
 import { expressX, expressXClient } from '../src/index.mjs'
 
@@ -12,12 +14,17 @@ import { expressX, expressXClient } from '../src/index.mjs'
 // `app` is a regular express application, enhanced with services and real-time features
 const app = expressX()
 
-app.createDatabaseService('User')
-app.createDatabaseService('Post')
-
 
 
 describe('ExpressX API (no running server)', () => {
+
+   before(async () => {
+      app.createDatabaseService('User')
+      app.createDatabaseService('Post')
+
+      await app.service('User').deleteMany()
+      await app.service('Post').deleteMany()
+   })
 
    it("can delete all users", async () => {
       const res = await app.service('User').deleteMany()
@@ -61,24 +68,41 @@ describe('HTTP/REST API', () => {
 
    let chris
 
-   before(() => {
+   before(async () => {
+      console.log("before")
       // add body parsers for http requests
       app.use(bodyParser.json())
       app.use(bodyParser.urlencoded({ extended: false }))
+
+      app.createDatabaseService('User')
+      app.createDatabaseService('Post')
+
+      await app.service('User').deleteMany()
+      await app.service('Post').deleteMany()
 
       // add http/rest endpoints
       app.addHttpRest('/api/user', app.service('User'))
       app.addHttpRest('/api/post', app.service('Post'))
 
-      app.server.listen(8008, () => console.log(`App listening at http://localhost:8008`))
+      await new Promise((resolve) => {
+         app.server.listen(8008, () => {
+            console.log(`App listening at http://localhost:8008`)
+            resolve()
+         })
+      })
+   })
+
+   after(() => {
+      console.log("after")
+      app.server.close()
    })
 
    it("can create a user", async () => {
       const res = await axios.post('http://localhost:8008/api/user', {
-         name: "carole",
-         email: 'carole@mail.fr'
+         name: "chris",
+         email: 'chris@mail.fr'
       })
-      assert(res?.data?.name === 'carole')
+      assert(res?.data?.name === 'chris')
    })
 
    it("can find users", async () => {
@@ -110,21 +134,30 @@ describe('HTTP/REST API', () => {
    })
 
    after(async () => {
-      await app.server.close()
+      app.server.close()
    })
 })
 
 
-// test compatibility with `express-x-client`
+// test compatibility with client API
 describe('Client API', () => {
 
    let clientApp, socket
 
-   before(() => {
-      app.server.listen(8008, () => console.log(`App listening at http://localhost:8008`))
+   before(async () => {
+      await new Promise((resolve) => {
+         app.server.listen(8008, () => {
+            console.log(`App listening at http://localhost:8008`)
+            resolve()
+         })
+      })
 
       socket = io('http://localhost:8008', { transports: ["websocket"] })
       clientApp = expressXClient(socket)
+   })
+
+   after(async () => {
+      app.server.close()
    })
 
    it("can create a user", async () => {
