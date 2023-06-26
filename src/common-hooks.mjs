@@ -1,6 +1,6 @@
 
 import config from 'config'
-import bcrypt from 'bcrypt'
+import bcrypt from 'bcryptjs'
 
 
 // hash password of user record
