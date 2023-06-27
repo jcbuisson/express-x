@@ -2,14 +2,14 @@
 import http from 'http'
 import { Server } from "socket.io"
 import express from 'express'
-import { PrismaClient } from '@prisma/client'
 
 /*
  * Enhance `app` express application with services and real-time features
  */
-export function expressX(options = {}) {
+export function expressX(prisma, options = {}) {
 
    const app = express()
+   app.set('prisma', prisma)
 
    if (options.ws === undefined) options.ws = { ws_prefix: "expressx" }
 
@@ -28,13 +28,6 @@ export function expressX(options = {}) {
     * create a service `name` based on Prisma table `entity`
     */
    function createDatabaseService(name, prismaOptions = { entity: name }) {
-
-      let prisma = app.get('prisma')
-      if (!prisma) {
-         prisma = new PrismaClient()
-         app.set('prisma', prisma)
-      }
-
       // take all prisma methods on `entity` table
       const methods = prisma[prismaOptions.entity]
 
@@ -74,7 +67,7 @@ export function expressX(options = {}) {
 
             // call method
             const result = await method(...context.args)
-            app.log('debug', `result ${result}`)
+            app.log('debug', 'result ' + JSON.stringify(result))
    
             // call 'after' hooks
             const afterMethodHooks = service?.hooks?.after && service.hooks.after[methodName] || []
