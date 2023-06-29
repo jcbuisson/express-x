@@ -120,7 +120,7 @@ export function expressX(prisma, options = {}) {
          http: { name: service.name }
       }
 
-      // introspect schema
+      // introspect schema and return a map: field name => prisma type
       async function getTypesMap() {
          const dmmf = await service.prisma._getDmmf()
          const fieldDescriptions = dmmf.modelMap[service.name].fields
@@ -252,10 +252,11 @@ export function expressX(prisma, options = {}) {
             id: lastConnectionId++,
             socket,
             channelNames: new Set(),
+            data: {},
          }
          // store connection in cache 
          connections[connection.id] = connection
-         app.log('verbose', `active connections ${Object.keys(connections)}`)
+         app.log('verbose', `active connection ids: ${Object.keys(connections)}`)
 
          // emit 'connection' event for app (expressjs extends EventEmitter)
          app.emit('connection', connection)
@@ -265,7 +266,16 @@ export function expressX(prisma, options = {}) {
 
          socket.on('disconnect', () => {
             app.log('verbose', `Client disconnected ${connection.id}`)
-            delete connections[connection.id]
+
+            // TODO: wait for 1mn before cleaning (a reconnection will use this data)
+            // delete connections[connection.id]
+         })
+
+         // handle connection data transfer caused by a disconnection (page reload, network issue, etc.)
+         socket.on('cnx-transfer', async ({ from, to }) => {
+            app.log('verbose', `cnx-transfer from ${from} to ${to}`)
+            connections[to] = connections[from]
+            delete connections[from]
          })
 
 
