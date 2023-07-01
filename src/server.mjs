@@ -16,7 +16,7 @@ export function expressX(prisma, options = {}) {
    const services = {}
 
    app.connections = {}
-   let lastConnectionId = 1
+   let lastConnectionId = options.lastConnectionId || 1
 
    app.printCnx = (label) => {
       console.log(label)
@@ -69,7 +69,6 @@ export function expressX(prisma, options = {}) {
             const beforeMethodHooks = service?.hooks?.before && service.hooks.before[methodName] || []
             const beforeAllHooks = service?.hooks?.before?.all || []
             for (const hook of [...beforeMethodHooks, ...beforeAllHooks]) {
-               // context = await hook(context)
                await hook(context)
             }
 
@@ -82,7 +81,6 @@ export function expressX(prisma, options = {}) {
             const afterMethodHooks = service?.hooks?.after && service.hooks.after[methodName] || []
             const afterAllHooks = service?.hooks?.after?.all || []
             for (const hook of [...afterMethodHooks, ...afterAllHooks]) {
-               // context = await hook(context)
                await hook(context)
             }
             return result
