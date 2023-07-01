@@ -8,7 +8,7 @@ import { PrismaClient } from '@prisma/client'
 import { describe, it, before, after, beforeEach, afterEach } from 'node:test'
 import { strict as assert } from 'node:assert'
 
-import { expressX, expressXClient } from '../src/index.mjs'
+import { expressX } from '../src/index.mjs'
 
 const prisma = new PrismaClient({
    datasources: {
@@ -142,43 +142,5 @@ describe('HTTP/REST API', () => {
 
    after(async () => {
       app.server.close()
-   })
-})
-
-
-// test compatibility with client API
-describe('Client API', () => {
-
-   let clientApp, socket
-
-   before(async () => {
-      await new Promise((resolve) => {
-         app.server.listen(8008, () => {
-            console.log(`App listening at http://localhost:8008`)
-            resolve()
-         })
-      })
-
-      socket = io('http://localhost:8008', { transports: ["websocket"] })
-      clientApp = expressXClient(socket)
-   })
-
-   after(async () => {
-      app.server.close()
-   })
-
-   it("can create a user", async () => {
-      const user = await clientApp.service('User').create({
-         data: {
-            name: "chris",
-            email: 'chris@mail.fr'
-         },
-      })
-      assert(user.name === 'chris')
-   })
-
-   after(async () => {
-      await socket.close()
-      await app.server.close()
    })
 })

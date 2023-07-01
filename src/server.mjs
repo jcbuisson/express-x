@@ -14,9 +14,16 @@ export function expressX(prisma, options = {}) {
    if (options.ws === undefined) options.ws = { ws_prefix: "expressx" }
 
    const services = {}
-   const connections = {}
 
+   app.connections = {}
    let lastConnectionId = 1
+
+   app.printCnx = (label) => {
+      console.log(label)
+      for (const id in app.connections) {
+         console.log(`CNX ${id}, data ${JSON.stringify(app.connections[id].data)}`)
+      }
+   }
 
    // logging function - a winston logger must be configured first
    app.log = (severity, message) => {
@@ -62,18 +69,21 @@ export function expressX(prisma, options = {}) {
             const beforeMethodHooks = service?.hooks?.before && service.hooks.before[methodName] || []
             const beforeAllHooks = service?.hooks?.before?.all || []
             for (const hook of [...beforeMethodHooks, ...beforeAllHooks]) {
-               context = await hook({ ...context, args })
+               // context = await hook(context)
+               await hook(context)
             }
 
             // call method
             const result = await method(...context.args)
-            app.log('debug', 'result ' + JSON.stringify(result))
+            // put result into context
+            context.result = result
    
             // call 'after' hooks
             const afterMethodHooks = service?.hooks?.after && service.hooks.after[methodName] || []
             const afterAllHooks = service?.hooks?.after?.all || []
             for (const hook of [...afterMethodHooks, ...afterAllHooks]) {
-               context = await hook({ ...context, result })
+               // context = await hook(context)
+               await hook(context)
             }
             return result
          }
@@ -117,7 +127,8 @@ export function expressX(prisma, options = {}) {
    async function addHttpRest(path, service) {
       const context = {
          app,
-         http: { name: service.name }
+         transport: 'http',
+         params: { name: service.name }
       }
 
       // introspect schema and return a map: field name => prisma type
@@ -133,7 +144,7 @@ export function expressX(prisma, options = {}) {
 
       app.post(path, async (req, res) => {
          app.log('verbose', `http request POST ${req.url}`)
-         context.http.req = req
+         context.params.req = req
          try {
             const value = await service.__create(context, { data: req.body })
             publish(service, 'create', value)
@@ -146,7 +157,7 @@ export function expressX(prisma, options = {}) {
 
       app.get(path, async (req, res) => {
          app.log('verbose', `http request GET ${req.url}`)
-         context.http.req = req
+         context.params.req = req
          const query = { ...req.query }
          try {
             // the values in `req.query` are all strings, but Prisma need proper types
@@ -182,7 +193,7 @@ export function expressX(prisma, options = {}) {
 
       app.get(`${path}/:id`, async (req, res) => {
          app.log('verbose', `http request GET ${req.url}`)
-         context.http.req = req
+         context.params.req = req
          try {
             const value = await service.__findUnique(context, {
                where: {
@@ -199,7 +210,7 @@ export function expressX(prisma, options = {}) {
 
       app.patch(`${path}/:id`, async (req, res) => {
          app.log('verbose', `http request PATCH ${req.url}`)
-         context.http.req = req
+         context.params.req = req
          try {
             const value = await service.__update(context, {
                where: {
@@ -217,7 +228,7 @@ export function expressX(prisma, options = {}) {
 
       app.delete(`${path}/:id`, async (req, res) => {
          app.log('verbose', `http request DELETE ${req.url}`)
-         context.http.req = req
+         context.params.req = req
          try {
             const value = await service.__delete(context, {
                where: {
@@ -252,11 +263,13 @@ export function expressX(prisma, options = {}) {
             id: lastConnectionId++,
             socket,
             channelNames: new Set(),
-            data: {},
+            data: {
+               a: 123
+            },
          }
          // store connection in cache 
-         connections[connection.id] = connection
-         app.log('verbose', `active connection ids: ${Object.keys(connections)}`)
+         app.connections[connection.id] = connection
+         app.log('verbose', `Connection ids: ${Object.keys(app.connections)}`)
 
          // emit 'connection' event for app (expressjs extends EventEmitter)
          app.emit('connection', connection)
@@ -267,15 +280,22 @@ export function expressX(prisma, options = {}) {
          socket.on('disconnect', () => {
             app.log('verbose', `Client disconnected ${connection.id}`)
 
-            // TODO: wait for 1mn before cleaning (a reconnection will use this data)
-            // delete connections[connection.id]
+            // remove connection record after 1mn (leaves time in case of connection transfer)
+            setTimeout(() => {
+               app.log('verbose', `Delete connection ${connection.id}`)
+               delete app.connections[connection.id]
+            }, 60 * 1000)
          })
 
-         // handle connection data transfer caused by a disconnection (page reload, network issue, etc.)
+         
+         // handle connection data transfer caused by a disconnection/reconnection (page reload, network issue, etc.)
          socket.on('cnx-transfer', async ({ from, to }) => {
             app.log('verbose', `cnx-transfer from ${from} to ${to}`)
-            connections[to] = connections[from]
-            delete connections[from]
+            if (!app.connections[from]) return
+            app.connections[to] = app.connections[from]
+            app.connections[to].socket = socket
+            delete app.connections[from]
+            // app.printCnx('AFTER TRANSFER')
          })
 
 
@@ -292,11 +312,13 @@ export function expressX(prisma, options = {}) {
                   if (serviceMethod) {
                      const context = {
                         app,
-                        ws: { connection, name, action, args },
+                        transport: 'ws',
+                        params: { connection, name, action, args },
                      }
 
                      try {
                         const result = await serviceMethod(context, ...args)
+                        app.log('verbose', `client-response ${uid} ${JSON.stringify(result)}`)
                         socket.emit('client-response', {
                            uid,
                            result,
@@ -304,7 +326,7 @@ export function expressX(prisma, options = {}) {
                         // pub/sub: send event on associated channels
                         publish(service, action, result)
                      } catch(err) {
-                        app.log('error', err)
+                        app.log('error', err.toString())
                         io.emit('client-response', {
                            uid,
                            error: err.toString(),
@@ -340,7 +362,7 @@ export function expressX(prisma, options = {}) {
          app.log('verbose', `publish channels ${service.name} ${action} ${channelNames}`)
          for (const channelName of channelNames) {
             app.log('verbose', `service-event ${service.name} ${action} ${channelName}`)
-            const connectionList = Object.values(connections).filter(cnx => cnx.channelNames.has(channelName))
+            const connectionList = Object.values(app.connections).filter(cnx => cnx.channelNames.has(channelName))
             for (const connection of connectionList) {
                app.log('verbose', `emit to ${connection.id} ${service.name} ${action} ${result}`)
                connection.socket.emit('service-event', {
