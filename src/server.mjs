@@ -16,7 +16,7 @@ export function expressX(prisma, options = {}) {
    const services = {}
 
    app.connections = {}
-   let lastConnectionId = options.lastConnectionId || 1
+   let lastConnectionId = options.initialConnectionId || 1
 
    app.printCnx = (label) => {
       console.log(label)
@@ -83,7 +83,7 @@ export function expressX(prisma, options = {}) {
             for (const hook of [...afterMethodHooks, ...afterAllHooks]) {
                await hook(context)
             }
-            return result
+            return context.result
          }
 
          // hooked version of method: `create`, etc., to be called from backend with no context
