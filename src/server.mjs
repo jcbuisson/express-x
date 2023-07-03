@@ -17,6 +17,8 @@ export function expressX(prisma, options = {}) {
 
    app.connections = {}
    let lastConnectionId = options.initialConnectionId || 1
+   // TODO: use redis to store `connections` and `lastConnectionId` for a clustered deployment
+   // (a connection/reconnection may occur on two different servers)
 
    app.printCnx = (label) => {
       console.log(label)
@@ -256,18 +258,17 @@ export function expressX(prisma, options = {}) {
       const io = new Server(server)
       
       io.on('connection', function(socket) {
-         app.log('verbose', 'Client connected to the WebSocket')
          const connection = {
             id: lastConnectionId++,
+            createdAt: new Date(),
             socket,
             channelNames: new Set(),
-            data: {
-               a: 123
-            },
+            data: {},
          }
+         app.log('verbose', `Client connected ${connection.id}`)
          // store connection in cache 
          app.connections[connection.id] = connection
-         app.log('verbose', `Connection ids: ${Object.keys(app.connections)}`)
+         // app.log('verbose', `Connection ids: ${Object.keys(app.connections)}`)
 
          // emit 'connection' event for app (expressjs extends EventEmitter)
          app.emit('connection', connection)
@@ -285,6 +286,11 @@ export function expressX(prisma, options = {}) {
             }, 60 * 1000)
          })
 
+         socket.on('reconnect', () => {
+            console.log('Client reconnected:', socket.id)
+            // Add your custom logic to link the reconnected WebSocket with the previous session
+         })
+
          
          // handle connection data transfer caused by a disconnection/reconnection (page reload, network issue, etc.)
          socket.on('cnx-transfer', async ({ from, to }) => {
@@ -293,16 +299,21 @@ export function expressX(prisma, options = {}) {
             app.connections[to] = app.connections[from]
             app.connections[to].socket = socket
             delete app.connections[from]
-            // app.printCnx('AFTER TRANSFER')
+            app.printCnx('AFTER TRANSFER')
+            // send acknowledge to client
+            io.emit('cnx-transfer-ack', to)
          })
 
+         function wait(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+         }
 
          /*
          * Handle websocket client request
          * Emit in return a 'client-response' message
          */
          socket.on('client-request', async ({ uid, name, action, args }) => {
-            app.log('verbose', `client-request ${uid} ${name} ${action} ${args}`)
+            app.log('verbose', `client-request ${uid} ${name} ${action} ${JSON.stringify(args)}`)
             if (name in services) {
                const service = services[name]
                try {
@@ -311,7 +322,7 @@ export function expressX(prisma, options = {}) {
                      const context = {
                         app,
                         transport: 'ws',
-                        params: { connection, name, action, args },
+                        params: { connectionId: connection.id, name, action, args },
                      }
 
                      try {
