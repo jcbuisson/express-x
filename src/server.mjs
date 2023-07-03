@@ -283,12 +283,7 @@ export function expressX(prisma, options = {}) {
             setTimeout(() => {
                app.log('verbose', `Delete connection ${connection.id}`)
                delete app.connections[connection.id]
-            }, 60 * 1000)
-         })
-
-         socket.on('reconnect', () => {
-            console.log('Client reconnected:', socket.id)
-            // Add your custom logic to link the reconnected WebSocket with the previous session
+            }, 10 * 1000)
          })
 
          
@@ -303,10 +298,6 @@ export function expressX(prisma, options = {}) {
             // send acknowledge to client
             io.emit('cnx-transfer-ack', to)
          })
-
-         function wait(ms) {
-            return new Promise(resolve => setTimeout(resolve, ms));
-         }
 
          /*
          * Handle websocket client request
