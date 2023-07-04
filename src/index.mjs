@@ -7,4 +7,5 @@ export {
 
    hashPassword,
    protect,
+   isAuthenticated,
 }
