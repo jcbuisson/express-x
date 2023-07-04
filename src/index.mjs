@@ -1,11 +1,10 @@
 
 import { expressX } from './server.mjs'
-import { hashPassword, protect, setSessionJWT, } from './common-hooks.mjs'
+import { hashPassword, protect, } from './common-hooks.mjs'
 
 export {
    expressX,
 
    hashPassword,
    protect,
-   setSessionJWT,
 }

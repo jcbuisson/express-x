@@ -15,15 +15,64 @@ export function expressX(prisma, options = {}) {
 
    const services = {}
 
-   app.connections = {}
-   let lastConnectionId = options.initialConnectionId || 1
-   // TODO: use redis to store `connections` and `lastConnectionId` for a clustered deployment
-   // (a connection/reconnection may occur on two different servers)
+   const cnx2Socket = {}
 
-   app.printCnx = (label) => {
+   function createConnection() {
+      return app.service('Connection').create({})
+   }
+
+   async function deleteConnection(id) {
+      try {
+         await app.service('Connection')._delete({ where: { id }})
+      } catch(err) {
+         console.log('111')
+      }
+   }
+
+   function getConnection(id) {
+      return app.service('Connection').findUnique({ where: { id }})
+   }
+
+   async function copyConnection(id, connection) {
+      await app.service('Connection').update({
+         where: { id },
+         data: {
+            channelNames: connection.channelNames,
+            data: connection.data,
+         }
+      })
+   }
+
+   async function getChannelConnections(channelName) {
+      const connections = await app.service('Connection').findMany({})
+      return connections.filter(connection => {
+         const channelNames = JSON.parse(connection.channelNames)
+         return channelNames.includes(channelName)
+      })
+   }
+
+   async function addChannelToConnection(connection, channelName) {
+      const channelNames = JSON.parse(connection.channelNames)
+      if (!channelNames.includes(channelName)) channelNames.push(channelName)
+      await app.service('Connection').update({
+         where: { id: connection.id },
+         data: { channelNames: JSON.stringify(channelNames) },
+      })
+   }
+
+   async function removeChannelFromConnection(connection, channelName) {
+      const channelNames = JSON.parse(connection.channelNames).filter(name => name !== channelName)
+      await app.service('Connection').update({
+         where: { id },
+         data: { channelNames: JSON.stringify(channelNames) },
+      })
+   }
+
+   app.printCnx = async (label) => {
       console.log(label)
-      for (const id in app.connections) {
-         console.log(`CNX ${id}, data ${JSON.stringify(app.connections[id].data)}`)
+      const connections = await app.service('Connection').findMany({})
+      for (const connection of connections) {
+         console.log(`CNX ${connection.id}, data ${JSON.stringify(connection.data)}`)
       }
    }
 
@@ -257,18 +306,11 @@ export function expressX(prisma, options = {}) {
       */
       const io = new Server(server)
       
-      io.on('connection', function(socket) {
-         const connection = {
-            id: lastConnectionId++,
-            createdAt: new Date(),
-            socket,
-            channelNames: new Set(),
-            data: {},
-         }
+      io.on('connection', async function(socket) {
+         const connection = await createConnection()
          app.log('verbose', `Client connected ${connection.id}`)
-         // store connection in cache 
-         app.connections[connection.id] = connection
-         // app.log('verbose', `Connection ids: ${Object.keys(app.connections)}`)
+
+         cnx2Socket[connection.id] = socket
 
          // emit 'connection' event for app (expressjs extends EventEmitter)
          app.emit('connection', connection)
@@ -282,7 +324,7 @@ export function expressX(prisma, options = {}) {
             // remove connection record after 1mn (leaves time in case of connection transfer)
             setTimeout(() => {
                app.log('verbose', `Delete connection ${connection.id}`)
-               delete app.connections[connection.id]
+               deleteConnection(connection.id)
             }, 10 * 1000)
          })
 
@@ -290,10 +332,11 @@ export function expressX(prisma, options = {}) {
          // handle connection data transfer caused by a disconnection/reconnection (page reload, network issue, etc.)
          socket.on('cnx-transfer', async ({ from, to }) => {
             app.log('verbose', `cnx-transfer from ${from} to ${to}`)
-            if (!app.connections[from]) return
-            app.connections[to] = app.connections[from]
-            app.connections[to].socket = socket
-            delete app.connections[from]
+            const fromConnection = await getConnection(from)
+            if (!fromConnection) return
+            await copyConnection(to, fromConnection)
+            cnx2Socket[to] = socket
+            await deleteConnection(from)
             app.printCnx('AFTER TRANSFER')
             // send acknowledge to client
             io.emit('cnx-transfer-ack', to)
@@ -362,10 +405,12 @@ export function expressX(prisma, options = {}) {
          app.log('verbose', `publish channels ${service.name} ${action} ${channelNames}`)
          for (const channelName of channelNames) {
             app.log('verbose', `service-event ${service.name} ${action} ${channelName}`)
-            const connectionList = Object.values(app.connections).filter(cnx => cnx.channelNames.has(channelName))
+            // const connectionList = Object.values(app.connections).filter(cnx => cnx.channelNames.has(channelName))
+            const connectionList = getChannelConnections(channelName)
             for (const connection of connectionList) {
                app.log('verbose', `emit to ${connection.id} ${service.name} ${action} ${result}`)
-               connection.socket.emit('service-event', {
+               const socket = cnx2Socket(connection.id)
+               socket.emit('service-event', {
                   name: service.name,
                   action,
                   result,
@@ -376,11 +421,11 @@ export function expressX(prisma, options = {}) {
    }
 
    function joinChannel(channelName, connection) {
-      connection.channelNames.add(channelName)
+      addChannelToConnection(connection, channelName)
    }
 
    function leaveChannel(channelName, connection) {
-      connection.channelNames.delete(channelName)
+      removeChannelFromConnection(connection, channelName)
    }
 
    // enhance `app` with objects and methods
