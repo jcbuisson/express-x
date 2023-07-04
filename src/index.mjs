@@ -1,6 +1,6 @@
 
 import { expressX } from './server.mjs'
-import { hashPassword, protect, } from './common-hooks.mjs'
+import { hashPassword, protect, isAuthenticated } from './common-hooks.mjs'
 
 export {
    expressX,
