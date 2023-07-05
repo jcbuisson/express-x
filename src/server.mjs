@@ -17,23 +17,15 @@ export function expressX(prisma, options = {}) {
 
    const cnx2Socket = {}
 
-   function createConnection() {
-      return app.service('Connection').create({})
-   }
-
-   async function deleteConnection(id) {
-      try {
-         await app.service('Connection')._delete({ where: { id }})
-      } catch(err) {
-         console.log('111')
-      }
+   function createConnection(clientIP) {
+      return app.service('Connection').create({ data: { clientIP }})
    }
 
    function getConnection(id) {
       return app.service('Connection').findUnique({ where: { id }})
    }
 
-   async function copyConnection(id, connection) {
+   async function cloneConnection(id, connection) {
       await app.service('Connection').update({
          where: { id },
          data: {
@@ -41,6 +33,14 @@ export function expressX(prisma, options = {}) {
             data: connection.data,
          }
       })
+   }
+
+   async function deleteConnection(id) {
+      try {
+         await app.service('Connection')._delete({ where: { id }})
+      } catch(err) {
+         // it may be necessary in rare situations (not sure...)
+      }
    }
 
    async function getChannelConnections(channelName) {
@@ -66,14 +66,6 @@ export function expressX(prisma, options = {}) {
          where: { id },
          data: { channelNames: JSON.stringify(channelNames) },
       })
-   }
-
-   app.printCnx = async (label) => {
-      console.log(label)
-      const connections = await app.service('Connection').findMany({})
-      for (const connection of connections) {
-         console.log(`CNX ${connection.id}, data ${JSON.stringify(connection.data)}`)
-      }
    }
 
    // logging function - a winston logger must be configured first
@@ -307,8 +299,9 @@ export function expressX(prisma, options = {}) {
       const io = new Server(server)
       
       io.on('connection', async function(socket) {
-         const connection = await createConnection()
-         app.log('verbose', `Client connected ${connection.id}`)
+         const clientIP = socket.request?.connection?.remoteAddress || 'unknown'
+         const connection = await createConnection(clientIP)
+         app.log('verbose', `Client connected ${connection.id} from IP ${clientIP}`)
 
          cnx2Socket[connection.id] = socket
 
@@ -322,9 +315,14 @@ export function expressX(prisma, options = {}) {
             app.log('verbose', `Client disconnected ${connection.id}`)
 
             // remove connection record after 1mn (leaves time in case of connection transfer)
-            setTimeout(() => {
-               app.log('verbose', `Delete connection ${connection.id}`)
-               deleteConnection(connection.id)
+            setTimeout(async () => {
+               const connectionId = connection.id
+               // check if connection still exists
+               const cnx = await getConnection(connectionId)
+               if (cnx) {
+                  app.log('verbose', `Delete connection ${connectionId}`)
+                  await deleteConnection(connectionId)
+               }
             }, 10 * 1000)
          })
 
@@ -334,10 +332,9 @@ export function expressX(prisma, options = {}) {
             app.log('verbose', `cnx-transfer from ${from} to ${to}`)
             const fromConnection = await getConnection(from)
             if (!fromConnection) return
-            await copyConnection(to, fromConnection)
+            await cloneConnection(to, fromConnection)
             cnx2Socket[to] = socket
             await deleteConnection(from)
-            app.printCnx('AFTER TRANSFER')
             // send acknowledge to client
             io.emit('cnx-transfer-ack', to)
          })
@@ -427,6 +424,7 @@ export function expressX(prisma, options = {}) {
    function leaveChannel(channelName, connection) {
       removeChannelFromConnection(connection, channelName)
    }
+
 
    // enhance `app` with objects and methods
    return Object.assign(app, {

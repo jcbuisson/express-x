@@ -1,4 +1,10 @@
 
+export async function getConnectionIP(context) {
+   const id = context.params.connectionId
+   const connection = await context.app.service('Connection')._findUnique({ where: { id }})
+   return connection?.clientIP
+}
+
 export async function getConnectionDataItem(context, key) {
    const id = context.params.connectionId
    const connection = await context.app.service('Connection')._findUnique({ where: { id }})
