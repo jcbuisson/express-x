@@ -37,3 +37,13 @@ export async function removeConnectionDataItem(context, key) {
       }
    })
 }
+
+export async function resetConnectionData(context) {
+   const id = context.params.connectionId
+   await context.app.service('Connection').update({
+      where: { id },
+      data: {
+         data: "{}"
+      }
+   })
+}
