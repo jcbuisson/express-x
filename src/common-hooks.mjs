@@ -2,6 +2,8 @@
 import config from 'config'
 import bcrypt from 'bcryptjs'
 
+import { getConnectionDataItem } from './context.mjs'
+
 
 // hash password of user record
 // name of the password field is found in `config.authentication.local.passwordField` (default: 'password')
@@ -30,9 +32,10 @@ export function protect(field) {
 export async function isAuthenticated(context) {
    if (context.transport !== 'ws') return
    // extract user from connection data
-   const id = context.params.connectionId
-   const connection = await context.app.service('Connection')._findUnique({ where: { id }})
-   const data = JSON.parse(connection.data)
-   const user = data.user
+   const user = await getConnectionDataItem(context, 'user')
+   // const id = context.params.connectionId
+   // const connection = await context.app.service('Connection')._findUnique({ where: { id }})
+   // const data = JSON.parse(connection.data)
+   // const user = data.user
    if (!user) throw Error(`AuthCode hook: not authenticated ${id}`)
 }
