@@ -31,11 +31,12 @@ export function protect(field) {
 
 export async function isAuthenticated(context) {
    if (context.transport !== 'ws') return
-   // extract user from connection data
-   const user = await getConnectionDataItem(context, 'user')
-   // const id = context.params.connectionId
-   // const connection = await context.app.service('Connection')._findUnique({ where: { id }})
-   // const data = JSON.parse(connection.data)
-   // const user = data.user
-   if (!user) throw Error(`AuthCode hook: not authenticated ${id}`)
+   // extract userId from connection data
+   const userId = await getConnectionDataItem(context, 'userId')
+   if (!userId) throw Error(`Not authenticated, userId ${userId}`)
+}
+
+export const isExpired = (delay) => async (context) => {
+   if (context.transport !== 'ws') return
+   // TODO
 }
