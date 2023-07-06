@@ -23,10 +23,3 @@ export async function removeChannelFromConnection(connection, channelName) {
       data: { channelNames: JSON.stringify(channelNames) },
    })
 }
-
-export async function resetConnectionChannels(connectionId) {
-   await app.service('Connection').update({
-      where: { id: connectionId },
-      data: { channelNames: '[]' },
-   })
-}
