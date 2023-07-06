@@ -1,8 +1,8 @@
 
-export async function getConnectionIP(context) {
+export async function getConnection(context) {
    const id = context.params.connectionId
    const connection = await context.app.service('Connection')._findUnique({ where: { id }})
-   return connection?.clientIP
+   return connection
 }
 
 export async function resetConnectionIP(context) {

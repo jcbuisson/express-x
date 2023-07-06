@@ -1,17 +1,16 @@
 
 import { expressX } from './server.mjs'
 import { hashPassword, protect, isAuthenticated } from './common-hooks.mjs'
-import { getConnectionIP, resetConnectionIP, getConnectionDataItem, setConnectionDataItem, removeConnectionDataItem, resetConnectionData } from './context.mjs'
+import { getConnection, resetConnectionIP, getConnectionDataItem, setConnectionDataItem, removeConnectionDataItem, resetConnectionData } from './context.mjs'
 import { resetConnectionChannels } from './channels.mjs'
 
 export {
    expressX,
 
-   getConnectionIP,
+   getConnection,
    resetConnectionIP,
-
    resetConnectionChannels,
-
+   
    getConnectionDataItem,
    setConnectionDataItem,
    removeConnectionDataItem,
