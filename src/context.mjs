@@ -60,7 +60,7 @@ export async function resetConnectionData(context) {
 
 export async function resetConnectionChannels(context) {
    const id = context.params.connectionId
-   await app.service('Connection').update({
+   await context.app.service('Connection').update({
       where: { id },
       data: { channelNames: '[]' },
    })
