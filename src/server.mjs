@@ -19,15 +19,16 @@ export function expressX(prisma, options = {}) {
 
    const cnx2Socket = {}
 
-   function createConnection(clientIP) {
+   async function createConnection(clientIP) {
       const now = new Date();
       const expirationTime = new Date(now.getTime() + 15 * 60000)
-      return app.service('Connection').create({
+      const connection = await app.service('Connection').create({
          data: {
             clientIP,
             expirationTime,
          }
       })
+      return connection
    }
 
    function getConnection(id) {
@@ -38,8 +39,10 @@ export function expressX(prisma, options = {}) {
       await app.service('Connection').update({
          where: { id },
          data: {
+            clientIP: connection.clientIP,
             channelNames: connection.channelNames,
             data: connection.data,
+            expirationTime: connection.expirationTime,
          }
       })
    }
@@ -401,6 +404,31 @@ export function expressX(prisma, options = {}) {
       }
    }
 
+   async function getChannelConnections(channelName) {
+      const connections = await app.service('Connection').findMany({})
+      return connections.filter(connection => {
+         const channelNames = JSON.parse(connection.channelNames)
+         return channelNames.includes(channelName)
+      })
+   }
+   
+   async function addChannelToConnection(connection, channelName) {
+      const channelNames = JSON.parse(connection.channelNames)
+      if (!channelNames.includes(channelName)) channelNames.push(channelName)
+      await app.service('Connection').update({
+         where: { id: connection.id },
+         data: { channelNames: JSON.stringify(channelNames) },
+      })
+   }
+   
+   async function removeChannelFromConnection(connection, channelName) {
+      const channelNames = JSON.parse(connection.channelNames).filter(name => name !== channelName)
+      await app.service('Connection').update({
+         where: { id },
+         data: { channelNames: JSON.stringify(channelNames) },
+      })
+   }
+   
    function joinChannel(channelName, connection) {
       addChannelToConnection(connection, channelName)
    }
