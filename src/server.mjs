@@ -20,7 +20,14 @@ export function expressX(prisma, options = {}) {
    const cnx2Socket = {}
 
    function createConnection(clientIP) {
-      return app.service('Connection').create({ data: { clientIP }})
+      const now = new Date();
+      const expirationTime = new Date(now.getTime() + 15 * 60000)
+      return app.service('Connection').create({
+         data: {
+            clientIP,
+            expirationTime,
+         }
+      })
    }
 
    function getConnection(id) {

@@ -33,7 +33,7 @@ export async function isAuthenticated(context) {
    if (context.transport !== 'ws') return
    // extract userId from connection data
    const userId = await getConnectionDataItem(context, 'userId')
-   if (!userId) throw Error(`Not authenticated, userId ${userId}`)
+   if (!userId) throw Error(`Not authenticated`)
 }
 
 export const isExpired = (delay) => async (context) => {
