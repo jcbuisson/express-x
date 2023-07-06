@@ -11,8 +11,8 @@ export async function resetConnection(context) {
       where: { id },
       data: {
          clientIP: '',
-         data: "{}",
-         data: { channelNames: '[]' },
+         data: '{}',
+         channelNames: '[]',
       }
    })
 }
