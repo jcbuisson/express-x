@@ -5,6 +5,16 @@ export async function getConnectionIP(context) {
    return connection?.clientIP
 }
 
+export async function resetConnectionIP(context) {
+   const id = context.params.connectionId
+   await context.app.service('Connection')._update({
+      where: { id },
+      data: {
+         clientIP: ''
+      }
+   })
+}
+
 export async function getConnectionDataItem(context, key) {
    const id = context.params.connectionId
    const connection = await context.app.service('Connection')._findUnique({ where: { id }})
@@ -17,7 +27,7 @@ export async function setConnectionDataItem(context, key, value) {
    const connection = await context.app.service('Connection')._findUnique({ where: { id }})
    const data = JSON.parse(connection.data)
    data[key] = value
-   await context.app.service('Connection').update({
+   await context.app.service('Connection')._update({
       where: { id },
       data: {
          data: JSON.stringify(data)

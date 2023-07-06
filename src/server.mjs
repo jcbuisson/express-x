@@ -3,6 +3,8 @@ import http from 'http'
 import { Server } from "socket.io"
 import express from 'express'
 
+import { getChannelConnections, addChannelToConnection, removeChannelFromConnection } from './channels.mjs'
+
 /*
  * Enhance `app` express application with services and real-time features
  */
@@ -43,30 +45,6 @@ export function expressX(prisma, options = {}) {
       }
    }
 
-   async function getChannelConnections(channelName) {
-      const connections = await app.service('Connection').findMany({})
-      return connections.filter(connection => {
-         const channelNames = JSON.parse(connection.channelNames)
-         return channelNames.includes(channelName)
-      })
-   }
-
-   async function addChannelToConnection(connection, channelName) {
-      const channelNames = JSON.parse(connection.channelNames)
-      if (!channelNames.includes(channelName)) channelNames.push(channelName)
-      await app.service('Connection').update({
-         where: { id: connection.id },
-         data: { channelNames: JSON.stringify(channelNames) },
-      })
-   }
-
-   async function removeChannelFromConnection(connection, channelName) {
-      const channelNames = JSON.parse(connection.channelNames).filter(name => name !== channelName)
-      await app.service('Connection').update({
-         where: { id },
-         data: { channelNames: JSON.stringify(channelNames) },
-      })
-   }
 
    // logging function - a winston logger must be configured first
    app.log = (severity, message) => {
@@ -402,7 +380,6 @@ export function expressX(prisma, options = {}) {
          app.log('verbose', `publish channels ${service.name} ${action} ${channelNames}`)
          for (const channelName of channelNames) {
             app.log('verbose', `service-event ${service.name} ${action} ${channelName}`)
-            // const connectionList = Object.values(app.connections).filter(cnx => cnx.channelNames.has(channelName))
             const connectionList = getChannelConnections(channelName)
             for (const connection of connectionList) {
                app.log('verbose', `emit to ${connection.id} ${service.name} ${action} ${result}`)
