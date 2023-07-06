@@ -3,8 +3,6 @@ import http from 'http'
 import { Server } from "socket.io"
 import express from 'express'
 
-import { getChannelConnections, addChannelToConnection, removeChannelFromConnection } from './channels.mjs'
-
 /*
  * Enhance `app` express application with services and real-time features
  */
