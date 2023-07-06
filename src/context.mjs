@@ -5,12 +5,14 @@ export async function getContextConnection(context) {
    return connection
 }
 
-export async function resetConnectionIP(context) {
+export async function resetConnection(context) {
    const id = context.params.connectionId
    await context.app.service('Connection')._update({
       where: { id },
       data: {
-         clientIP: ''
+         clientIP: '',
+         data: "{}",
+         data: { channelNames: '[]' },
       }
    })
 }
@@ -45,23 +47,5 @@ export async function removeConnectionDataItem(context, key) {
       data: {
          data: JSON.stringify(data)
       }
-   })
-}
-
-export async function resetConnectionData(context) {
-   const id = context.params.connectionId
-   await context.app.service('Connection').update({
-      where: { id },
-      data: {
-         data: "{}"
-      }
-   })
-}
-
-export async function resetConnectionChannels(context) {
-   const id = context.params.connectionId
-   await context.app.service('Connection').update({
-      where: { id },
-      data: { channelNames: '[]' },
    })
 }
