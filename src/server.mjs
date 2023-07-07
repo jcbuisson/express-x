@@ -435,6 +435,7 @@ export function expressX(prisma, options = {}) {
    // enhance `app` with objects and methods
    return Object.assign(app, {
       options,
+      cnx2Socket,
       createDatabaseService,
       createService,
       service,

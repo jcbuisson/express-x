@@ -49,3 +49,9 @@ export async function removeConnectionDataItem(context, key) {
       }
    })
 }
+
+export function sendEventToClient(context, type, value) {
+   const id = context.params.connectionId
+   const socket = context.app.cnx2Socket
+   socket.emit(type, value)
+}
