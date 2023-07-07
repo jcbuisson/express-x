@@ -18,12 +18,9 @@ export function expressX(prisma, options = {}) {
    const cnx2Socket = {}
 
    async function createConnection(clientIP) {
-      const now = new Date();
-      const expirationTime = new Date(now.getTime() + 15 * 60000)
       const connection = await app.service('Connection').create({
          data: {
             clientIP,
-            expirationTime,
          }
       })
       return connection
@@ -40,7 +37,6 @@ export function expressX(prisma, options = {}) {
             clientIP: connection.clientIP,
             channelNames: connection.channelNames,
             data: connection.data,
-            expirationTime: connection.expirationTime,
          }
       })
    }
