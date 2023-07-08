@@ -18,7 +18,7 @@ export function expressX(prisma, options = {}) {
    const cnx2Socket = {}
 
    async function createConnection(clientIP) {
-      const connection = await app.service('Connection').create({
+      const connection = await prisma.Connection.create({
          data: {
             clientIP,
          }
@@ -27,11 +27,11 @@ export function expressX(prisma, options = {}) {
    }
 
    function getConnection(id) {
-      return app.service('Connection').findUnique({ where: { id }})
+      return prisma.Connection.findUnique({ where: { id }})
    }
 
    async function cloneConnection(id, connection) {
-      await app.service('Connection').update({
+      await prisma.Connection.update({
          where: { id },
          data: {
             clientIP: connection.clientIP,
@@ -43,7 +43,7 @@ export function expressX(prisma, options = {}) {
 
    async function deleteConnection(id) {
       try {
-         await app.service('Connection')._delete({ where: { id }})
+         await prisma.Connection.delete({ where: { id }})
       } catch(err) {
          // it may be necessary in rare situations (not sure...)
       }
