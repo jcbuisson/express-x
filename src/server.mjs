@@ -9,7 +9,7 @@ import express from 'express'
 export function expressX(prisma, options = {}) {
 
    const app = express()
-   app.set('prisma', prisma)
+   // app.set('prisma', prisma)
 
    if (options.ws === undefined) options.ws = { ws_prefix: "expressx" }
 
@@ -434,6 +434,7 @@ export function expressX(prisma, options = {}) {
 
    // enhance `app` with objects and methods
    return Object.assign(app, {
+      prisma,
       options,
       cnx2Socket,
       createDatabaseService,
