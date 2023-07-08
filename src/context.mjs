@@ -50,8 +50,13 @@ export async function removeConnectionDataItem(context, key) {
    })
 }
 
-export async function sendEventToClient(context, type, value) {
+export async function sendServiceEventToClient(context, name, action, result) {
    const id = context.params.connectionId
    const socket = context.app.cnx2Socket[id]
-   socket.emit(type, value)
+   socket.emit('service-event', {
+      name,
+      action,
+      result,
+   })
+
 }
