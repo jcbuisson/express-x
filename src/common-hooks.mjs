@@ -36,7 +36,9 @@ export async function isAuthenticated(context) {
    if (!userId) throw Error(`Not authenticated`)
 }
 
-export const isExpired = (delay) => async (context) => {
+export const isNotExpired = (delay) => async (context) => {
    if (context.transport !== 'ws') return
-   // TODO
+   const expireAt = await getConnectionDataItem(context, 'expireAt')
+   const now = new Date()
+   if (expireAt > now) throw new Error('session expired')
 }
