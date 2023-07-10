@@ -388,6 +388,9 @@ export function expressX(prisma, options = {}) {
             for (const connection of connectionList) {
                app.log('verbose', `emit to ${connection.id} ${service.name} ${action} ${result}`)
                const socket = cnx2Socket[connection.id]
+               if (!socket) {
+                  continue // SHOULD NOT HAPPEN
+               }
                socket.emit('service-event', {
                   name: service.name,
                   action,
