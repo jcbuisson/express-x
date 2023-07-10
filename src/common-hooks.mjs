@@ -2,7 +2,7 @@
 import config from 'config'
 import bcrypt from 'bcryptjs'
 
-import { getConnectionDataItem } from './context.mjs'
+import { getConnectionDataItem, resetConnection } from './context.mjs'
 
 
 // hash password of user record
@@ -40,5 +40,10 @@ export const isNotExpired = (delay) => async (context) => {
    if (context.transport !== 'ws') return
    const expireAt = await getConnectionDataItem(context, 'expireAt')
    const now = new Date()
-   if (expireAt > now) throw new Error('session expired')
+   if (expireAt > now) {
+      // clear connection data
+      await resetConnection(context)
+      // throw exception
+      throw new Error('session expired')
+   }
 }

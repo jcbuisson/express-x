@@ -10,7 +10,6 @@ export async function resetConnection(context) {
    await context.app.prisma.Connection.update({
       where: { id },
       data: {
-         clientIP: '',
          data: '{}',
          channelNames: '[]',
       }

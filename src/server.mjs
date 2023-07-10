@@ -384,10 +384,10 @@ export function expressX(prisma, options = {}) {
          app.log('verbose', `publish channels ${service.name} ${action} ${channelNames}`)
          for (const channelName of channelNames) {
             app.log('verbose', `service-event ${service.name} ${action} ${channelName}`)
-            const connectionList = getChannelConnections(channelName)
+            const connectionList = await getChannelConnections(channelName)
             for (const connection of connectionList) {
                app.log('verbose', `emit to ${connection.id} ${service.name} ${action} ${result}`)
-               const socket = cnx2Socket(connection.id)
+               const socket = cnx2Socket[connection.id]
                socket.emit('service-event', {
                   name: service.name,
                   action,
