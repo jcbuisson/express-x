@@ -2,7 +2,7 @@
 import config from 'config'
 import bcrypt from 'bcryptjs'
 
-import { getConnectionDataItem, resetConnection } from './context.mjs'
+import { getConnectionDataItem } from './context.mjs'
 
 
 // hash password of user record
@@ -42,8 +42,7 @@ export const isNotExpired = async (context) => {
    const expireAt = new Date(expireAtISO)
    const now = new Date()
    if (now > expireAt) {
-      // clear connection data
-      await resetConnection(context)
+      // DON'T CLEAR CONNECTION DATA, LOGOUT WILL NOT BE ABLE TO RETRIEVE SESSIONID
       // throw exception
       throw new Error('session expired')
    }
