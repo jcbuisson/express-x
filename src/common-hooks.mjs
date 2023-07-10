@@ -41,7 +41,7 @@ export const isNotExpired = async (context) => {
    const expireAtISO = await getConnectionDataItem(context, 'expireAt')
    const expireAt = new Date(expireAtISO)
    const now = new Date()
-   if (expireAt > now) {
+   if (now > expireAt) {
       // clear connection data
       await resetConnection(context)
       // throw exception
