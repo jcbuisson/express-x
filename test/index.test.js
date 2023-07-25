@@ -1,7 +1,6 @@
 
 import bodyParser from 'body-parser'
 import axios from 'axios'
-import io from 'socket.io-client'
 import { PrismaClient } from '@prisma/client'
 
 
@@ -10,13 +9,7 @@ import { strict as assert } from 'node:assert'
 
 import { expressX } from '../src/index.mjs'
 
-const prisma = new PrismaClient({
-   datasources: {
-      db: {
-         url: "file:./dev.db",
-      },
-   },
-})
+const prisma = new PrismaClient()
 
 // `app` is a regular express application, enhanced with services and real-time features
 const app = expressX(prisma)

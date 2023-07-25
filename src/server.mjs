@@ -340,7 +340,8 @@ export function expressX(prisma, options = {}) {
 
                      try {
                         const result = await serviceMethod(context, ...args)
-                        app.log('verbose', `client-response ${uid} ${JSON.stringify(result)}`)
+                        const trimmedResult = JSON.stringify(result).slice(0, 300)
+                        app.log('verbose', `client-response ${uid} ${trimmedResult}`)
                         socket.emit('client-response', {
                            uid,
                            result,
@@ -386,7 +387,8 @@ export function expressX(prisma, options = {}) {
             app.log('verbose', `service-event ${service.name} ${action} ${channelName}`)
             const connectionList = await getChannelConnections(channelName)
             for (const connection of connectionList) {
-               app.log('verbose', `emit to ${connection.id} ${service.name} ${action} ${result}`)
+               const trimmedResult = JSON.stringify(result).slice(0, 300)
+               app.log('verbose', `emit to ${connection.id} ${service.name} ${action} ${trimmedResult}`)
                const socket = cnx2Socket[connection.id]
                if (!socket) {
                   continue // SHOULD NOT HAPPEN
