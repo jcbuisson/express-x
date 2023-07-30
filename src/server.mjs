@@ -9,7 +9,6 @@ import express from 'express'
 export function expressX(prisma, options = {}) {
 
    const app = express()
-   // app.set('prisma', prisma)
 
    if (options.ws === undefined) options.ws = { ws_prefix: "expressx" }
 
@@ -114,9 +113,10 @@ export function expressX(prisma, options = {}) {
             if (publishFunc) {
                const channelNames = await publishFunc(result, app)
                app.log('verbose', `publish channels ${service.name} ${methodName} ${channelNames}`)
+               const connections = await app.prisma.Connection.findMany({})
+               console.log('connections', connections)
                for (const channelName of channelNames) {
                   app.log('verbose', `service-event ${service.name} ${methodName} ${channelName}`)
-                  const connections = await app.prisma.Connection.findMany({})
                   const connectionList = connections.filter(connection => {
                      const channelNames = JSON.parse(connection.channelNames)
                      return channelNames.includes(channelName)
@@ -126,6 +126,7 @@ export function expressX(prisma, options = {}) {
                      const trimmedResult = JSON.stringify(result).slice(0, 300)
                      app.log('verbose', `emit to ${connection.id} ${service.name} ${methodName} ${trimmedResult}`)
                      const socket = cnx2Socket[connection.id]
+                     console.log()
                      if (!socket) {
                         continue // SHOULD NOT HAPPEN
                      }
@@ -313,6 +314,7 @@ export function expressX(prisma, options = {}) {
          cnx2Socket[connection.id] = socket
 
          // emit 'connection' event for app (expressjs extends EventEmitter)
+         console.log('EMIT CONNECTION')
          app.emit('connection', connection)
 
          // send 'connected' event to client
@@ -401,6 +403,7 @@ export function expressX(prisma, options = {}) {
    }
    
    async function joinChannel(channelName, connection) {
+      app.log('verbose', `Joining channel ${channelName} ${connection.id}`)
       const channelNames = JSON.parse(connection.channelNames)
       if (!channelNames.includes(channelName)) channelNames.push(channelName)
       await app.prisma.Connection.update({
@@ -410,6 +413,7 @@ export function expressX(prisma, options = {}) {
    }
 
    async function leaveChannel(channelName, connection) {
+      app.log('verbose', `Leaving channel ${channelName} ${connection.id}`)
       const channelNames = JSON.parse(connection.channelNames).filter(name => name !== channelName)
       await app.prisma.Connection.update({
          where: { id },
