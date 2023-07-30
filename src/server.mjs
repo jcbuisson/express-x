@@ -108,6 +108,36 @@ export function expressX(prisma, options = {}) {
             for (const hook of [...afterMethodHooks, ...afterAllHooks]) {
                await hook(context)
             }
+
+            // publish event
+            const publishFunc = service.publishCallback
+            if (publishFunc) {
+               const channelNames = await publishFunc(result, app)
+               app.log('verbose', `publish channels ${service.name} ${methodName} ${channelNames}`)
+               for (const channelName of channelNames) {
+                  app.log('verbose', `service-event ${service.name} ${methodName} ${channelName}`)
+                  const connections = await app.prisma.Connection.findMany({})
+                  const connectionList = connections.filter(connection => {
+                     const channelNames = JSON.parse(connection.channelNames)
+                     return channelNames.includes(channelName)
+                  })
+            
+                  for (const connection of connectionList) {
+                     const trimmedResult = JSON.stringify(result).slice(0, 300)
+                     app.log('verbose', `emit to ${connection.id} ${service.name} ${methodName} ${trimmedResult}`)
+                     const socket = cnx2Socket[connection.id]
+                     if (!socket) {
+                        continue // SHOULD NOT HAPPEN
+                     }
+                     socket.emit('service-event', {
+                        name: service.name,
+                        action: methodName,
+                        result,
+                     })
+                  }
+               }
+            }
+      
             return context.result
          }
 
@@ -170,7 +200,6 @@ export function expressX(prisma, options = {}) {
          context.params.req = req
          try {
             const value = await service.__create(context, { data: req.body })
-            publish(service, 'create', value)
             res.json(value)
          } catch(err) {
             app.log('error', err)
@@ -206,7 +235,6 @@ export function expressX(prisma, options = {}) {
             const values = await service.__findMany(context, {
                where: query,
             })
-            publish(service, 'findMany', values)
             res.json(values)
          } catch(err) {
             app.log('error', err)
@@ -223,7 +251,6 @@ export function expressX(prisma, options = {}) {
                   id: parseInt(req.params.id)
                }
             })
-            publish(service, 'findUnique', value)
             res.json(value)
          } catch(err) {
             app.log('error', err)
@@ -241,7 +268,6 @@ export function expressX(prisma, options = {}) {
                },
                data: req.body,
             })
-            publish(service, 'update', value)
             res.json(value)
          } catch(err) {
             app.log('error', err)
@@ -258,7 +284,6 @@ export function expressX(prisma, options = {}) {
                   id: parseInt(req.params.id)
                }
             })
-            publish(service, 'delete', value)
             res.json(value)
          } catch(err) {
             app.log('error', err)
@@ -346,8 +371,6 @@ export function expressX(prisma, options = {}) {
                            uid,
                            result,
                         })
-                        // pub/sub: send event on associated channels
-                        publish(service, action, result)
                      } catch(err) {
                         app.log('error', err.toString())
                         io.emit('client-response', {
@@ -376,42 +399,8 @@ export function expressX(prisma, options = {}) {
          })
       })      
    }
-
-   // publish event on associated channels
-   async function publish(service, action, result) {
-      const publishFunc = service.publishCallback
-      if (publishFunc) {
-         const channelNames = await publishFunc(result, app)
-         app.log('verbose', `publish channels ${service.name} ${action} ${channelNames}`)
-         for (const channelName of channelNames) {
-            app.log('verbose', `service-event ${service.name} ${action} ${channelName}`)
-            const connectionList = await getChannelConnections(channelName)
-            for (const connection of connectionList) {
-               const trimmedResult = JSON.stringify(result).slice(0, 300)
-               app.log('verbose', `emit to ${connection.id} ${service.name} ${action} ${trimmedResult}`)
-               const socket = cnx2Socket[connection.id]
-               if (!socket) {
-                  continue // SHOULD NOT HAPPEN
-               }
-               socket.emit('service-event', {
-                  name: service.name,
-                  action,
-                  result,
-               })
-            }
-         }
-      }
-   }
-
-   async function getChannelConnections(channelName) {
-      const connections = await app.prisma.Connection.findMany({})
-      return connections.filter(connection => {
-         const channelNames = JSON.parse(connection.channelNames)
-         return channelNames.includes(channelName)
-      })
-   }
    
-   async function addChannelToConnection(connection, channelName) {
+   async function joinChannel(channelName, connection) {
       const channelNames = JSON.parse(connection.channelNames)
       if (!channelNames.includes(channelName)) channelNames.push(channelName)
       await app.prisma.Connection.update({
@@ -419,21 +408,13 @@ export function expressX(prisma, options = {}) {
          data: { channelNames: JSON.stringify(channelNames) },
       })
    }
-   
-   async function removeChannelFromConnection(connection, channelName) {
+
+   async function leaveChannel(channelName, connection) {
       const channelNames = JSON.parse(connection.channelNames).filter(name => name !== channelName)
       await app.prisma.Connection.update({
          where: { id },
          data: { channelNames: JSON.stringify(channelNames) },
       })
-   }
-   
-   function joinChannel(channelName, connection) {
-      addChannelToConnection(connection, channelName)
-   }
-
-   function leaveChannel(channelName, connection) {
-      removeChannelFromConnection(connection, channelName)
    }
 
 
