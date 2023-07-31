@@ -123,7 +123,7 @@ export function expressX(prisma, options = {}) {
                   })
             
                   for (const connection of connectionList) {
-                     const trimmedResult = JSON.stringify(result).slice(0, 300)
+                     const trimmedResult = result ? JSON.stringify(result).slice(0, 300) : ''
                      app.log('verbose', `emit to ${connection.id} ${service.name} ${methodName} ${trimmedResult}`)
                      const socket = cnx2Socket[connection.id]
                      console.log()
@@ -367,7 +367,7 @@ export function expressX(prisma, options = {}) {
 
                      try {
                         const result = await serviceMethod(context, ...args)
-                        const trimmedResult = JSON.stringify(result).slice(0, 300)
+                        const trimmedResult = result ? JSON.stringify(result).slice(0, 300) : ''
                         app.log('verbose', `client-response ${uid} ${trimmedResult}`)
                         socket.emit('client-response', {
                            uid,
