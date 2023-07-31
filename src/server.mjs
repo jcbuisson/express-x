@@ -114,7 +114,6 @@ export function expressX(prisma, options = {}) {
                const channelNames = await publishFunc(result, app)
                app.log('verbose', `publish channels ${service.name} ${methodName} ${channelNames}`)
                const connections = await app.prisma.Connection.findMany({})
-               console.log('connections', connections)
                for (const channelName of channelNames) {
                   app.log('verbose', `service-event ${service.name} ${methodName} ${channelName}`)
                   const connectionList = connections.filter(connection => {
