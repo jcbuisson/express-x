@@ -13,6 +13,7 @@ export function expressX(prisma, options = {}) {
    if (options.ws === undefined) options.ws = { ws_prefix: "expressx" }
 
    const services = {}
+   let appHooks = []
 
    const cnx2Socket = {}
 
@@ -89,10 +90,11 @@ export function expressX(prisma, options = {}) {
             // if a hook or the method throws an error, it will be caught by `socket.on('client-request'` (ws)
             // or by express (http) and the client will get a rejected promise
 
-            // call 'before' hooks, modifying `context.args`
+            // call 'before' hooks, modifying `context`
+            const beforeAppHooks = appHooks?.before || []
             const beforeMethodHooks = service?.hooks?.before && service.hooks.before[methodName] || []
             const beforeAllHooks = service?.hooks?.before?.all || []
-            for (const hook of [...beforeMethodHooks, ...beforeAllHooks]) {
+            for (const hook of [...beforeAppHooks, ...beforeMethodHooks, ...beforeAllHooks]) {
                await hook(context)
             }
 
@@ -100,18 +102,18 @@ export function expressX(prisma, options = {}) {
             const result = await method(...context.args)
             // put result into context
             context.result = result
-   
-            // call 'after' hooks
+
+            // call 'after' hooks, modifying `context`
             const afterMethodHooks = service?.hooks?.after && service.hooks.after[methodName] || []
             const afterAllHooks = service?.hooks?.after?.all || []
-            for (const hook of [...afterMethodHooks, ...afterAllHooks]) {
+            const afterAppHooks = appHooks?.after || []
+            for (const hook of [...afterMethodHooks, ...afterAllHooks, ...afterAppHooks]) {
                await hook(context)
             }
 
-            // publish event
-            const publishFunc = service.publishCallback
-            if (publishFunc) {
-               const channelNames = await publishFunc(result, app)
+            // publish event (websocket transport)
+            if (options.ws && service.publishFunction) {
+               const channelNames = await service.publishFunction(result, app)
                app.log('verbose', `publish channels ${service.name} ${methodName} ${channelNames}`)
                const connections = await app.prisma.Connection.findMany({})
                for (const channelName of channelNames) {
@@ -125,11 +127,8 @@ export function expressX(prisma, options = {}) {
                      const trimmedResult = result ? JSON.stringify(result).slice(0, 300) : ''
                      app.log('verbose', `emit to ${connection.id} ${service.name} ${methodName} ${trimmedResult}`)
                      const socket = cnx2Socket[connection.id]
-                     console.log()
-                     if (!socket) {
-                        continue // SHOULD NOT HAPPEN
-                     }
-                     socket.emit('service-event', {
+                     // emit service event
+                     socket && socket.emit('service-event', {
                         name: service.name,
                         action: methodName,
                         result,
@@ -137,20 +136,27 @@ export function expressX(prisma, options = {}) {
                   }
                }
             }
-      
+
+            // AD-HOC, FOR SESSION EXPIRATION
+            // emit application event, if any, only to the calling cllient (no pub/sub)
+            if (context.appEvent) {
+               const socket = cnx2Socket[context?.params?.connectionId]
+               socket && socket.emit('app-event', context.appEvent)
+            }
+            
             return context.result
          }
 
+         // TODO: NOT CLEAR, CREATE ISSUES
          // hooked version of method: `create`, etc., to be called from backend with no context
          service[methodName] = method
-
          // un-hooked version of method: `_create`, etc., to be called from backend with no context
          service['_' + methodName] = method
       }
 
       // attach pub/sub publish callback
       service.publish = async (func) => {
-         service.publishCallback = func
+         service.publishFunction = func
       },
 
       // attach hooks
@@ -172,6 +178,11 @@ export function expressX(prisma, options = {}) {
 
    function configure(callback) {
       callback(app)
+   }
+
+   // set application hooks
+   function hooks(hooks) {
+      appHooks = hooks
    }
 
    /*
@@ -430,6 +441,7 @@ export function expressX(prisma, options = {}) {
       createService,
       service,
       configure,
+      hooks,
       addHttpRest,
       server,
       joinChannel,
