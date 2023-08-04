@@ -49,6 +49,14 @@ export function expressX(prisma, options = {}) {
       }
    }
 
+   function getSocket(connectionId) {
+      return cnx2Socket[connectionId]
+   }
+
+   function setSocket(connectionId, socket) {
+      cnx2Socket[connectionId] = socket
+   }
+
 
    // logging function - a winston logger must be configured first
    app.log = (severity, message) => {
@@ -126,7 +134,7 @@ export function expressX(prisma, options = {}) {
                   for (const connection of connectionList) {
                      const trimmedResult = result ? JSON.stringify(result).slice(0, 300) : ''
                      app.log('verbose', `emit to ${connection.id} ${service.name} ${methodName} ${trimmedResult}`)
-                     const socket = cnx2Socket[connection.id]
+                     const socket = getSocket(connection.id)
                      // emit service event
                      socket && socket.emit('service-event', {
                         name: service.name,
@@ -136,18 +144,11 @@ export function expressX(prisma, options = {}) {
                   }
                }
             }
-
-            // AD-HOC, FOR SESSION EXPIRATION
-            // emit application event, if any, only to the calling cllient (no pub/sub)
-            if (context.appEvent) {
-               const socket = cnx2Socket[context?.params?.connectionId]
-               socket && socket.emit('app-event', context.appEvent)
-            }
             
             return context.result
          }
 
-         // TODO: NOT CLEAR, CREATE ISSUES
+         // TODO: NOT CLEAR AND PROBABLY USELESS
          // hooked version of method: `create`, etc., to be called from backend with no context
          service[methodName] = method
          // un-hooked version of method: `_create`, etc., to be called from backend with no context
@@ -321,7 +322,7 @@ export function expressX(prisma, options = {}) {
          const connection = await createConnection(clientIP)
          app.log('verbose', `Client connected ${connection.id} from IP ${clientIP}`)
 
-         cnx2Socket[connection.id] = socket
+         setSocket(connection.id, socket)
 
          // emit 'connection' event for app (expressjs extends EventEmitter)
          console.log('EMIT CONNECTION')
@@ -352,7 +353,7 @@ export function expressX(prisma, options = {}) {
             const fromConnection = await getConnection(from)
             if (!fromConnection) return
             await cloneConnection(to, fromConnection)
-            cnx2Socket[to] = socket
+            setSocket(to, socket)
             await deleteConnection(from)
             // send acknowledge to client
             io.emit('cnx-transfer-ack', to)
@@ -436,7 +437,7 @@ export function expressX(prisma, options = {}) {
    return Object.assign(app, {
       prisma,
       options,
-      cnx2Socket,
+      getSocket, setSocket,
       createDatabaseService,
       createService,
       service,
