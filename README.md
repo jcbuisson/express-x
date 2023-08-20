@@ -102,8 +102,8 @@ node app.js
 
 It prints the following lines in the console:
 ```bash
-created service 'user' over table 'User'
-created service 'post' over table 'Post'
+created service 'user' over entity 'User'
+created service 'post' over entity 'Post'
 added HTTP endpoints for service 'user' at path '/api/user'
 added HTTP endpoints for service 'post' at path '/api/post'
 App listening at http://localhost:8000

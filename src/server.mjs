@@ -16,6 +16,7 @@ export function expressX(prisma, options = {}) {
    let appHooks = []
 
    const cnx2Socket = {}
+   const cnx2Timer = {}
 
    async function createConnection(clientIP) {
       const connection = await prisma.Connection.create({
@@ -55,6 +56,15 @@ export function expressX(prisma, options = {}) {
 
    function setSocket(connectionId, socket) {
       cnx2Socket[connectionId] = socket
+   }
+
+
+   function getTimer(connectionId) {
+      return cnx2Timer[connectionId]
+   }
+
+   function setTimer(connectionId, timer) {
+      cnx2Timer[connectionId] = timer
    }
 
 
@@ -438,6 +448,7 @@ export function expressX(prisma, options = {}) {
       prisma,
       options,
       getSocket, setSocket,
+      getTimer, setTimer,
       createDatabaseService,
       createService,
       service,
