@@ -6,14 +6,18 @@ export async function getContextConnection(context) {
 }
 
 export async function resetConnection(context) {
-   const id = context.params.connectionId
-   await context.app.prisma.Connection.update({
-      where: { id },
-      data: {
-         data: '{}',
-         channelNames: '[]',
-      }
-   })
+   try {
+      const id = context.params.connectionId
+      await context.app.prisma.Connection.update({
+         where: { id },
+         data: {
+            data: '{}',
+            channelNames: '[]',
+         }
+      })
+   } catch(err) {
+      console.log('should not happen', err)
+   }
 }
 
 export async function getConnectionDataItem(context, key) {
