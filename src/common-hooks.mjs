@@ -1,18 +1,14 @@
 
-import config from 'config'
 import bcrypt from 'bcryptjs'
 
 import { getConnectionDataItem } from './context.mjs'
 
 
 // hash password of user record
-// name of the password field is found in `config.authentication.local.passwordField` (default: 'password')
-export async function hashPassword(context) {
-   const passwordField = config.authentication.local.passwordField
+export const hashPassword = (passwordField) => async (context) => {
    context.args[0][passwordField] = await bcrypt.hash(context.args[0][passwordField], 5)
    return context
 }
-
 
 // remove `field` from `result`
 export function protect(field) {
@@ -28,12 +24,11 @@ export function protect(field) {
    }
 }
 
-
 export async function isAuthenticated(context) {
    if (context.transport !== 'ws') return
-   // extract userId from connection data
-   const userId = await getConnectionDataItem(context, 'userId')
-   if (!userId) throw Error(`Not authenticated`)
+   // extract sessionId from connection data
+   const sessionId = await getConnectionDataItem(context, 'sessionId')
+   if (!sessionId) throw Error(`Not authenticated (no sessionId in connection data)`)
 }
 
 export const isNotExpired = async (context) => {
