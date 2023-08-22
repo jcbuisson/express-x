@@ -6,7 +6,8 @@ import { getConnectionDataItem } from './context.mjs'
 
 // hash password of user record
 export const hashPassword = (passwordField) => async (context) => {
-   context.args[0][passwordField] = await bcrypt.hash(context.args[0][passwordField], 5)
+   // context.result is a user
+   context.result[passwordField] = await bcrypt.hash(context.result[passwordField], 5)
    return context
 }
 
