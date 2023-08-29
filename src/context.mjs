@@ -8,7 +8,7 @@ export async function getContextConnection(context) {
 export async function resetConnection(context) {
    const id = context.params.connectionId
    // by using updateMany, we cover the case where the connection `id` no longer exists
-   await context.app.prisma.Connection.update({
+   await context.app.prisma.Connection.updateMany({
       where: { id },
       data: {
          data: '{}',
