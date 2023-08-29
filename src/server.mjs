@@ -32,7 +32,7 @@ export function expressX(prisma, options = {}) {
    }
 
    async function cloneConnection(id, connection) {
-      await prisma.Connection.update({
+      return await prisma.Connection.update({
          where: { id },
          data: {
             clientIP: connection.clientIP,
@@ -362,11 +362,12 @@ export function expressX(prisma, options = {}) {
             app.log('verbose', `cnx-transfer from ${from} to ${to}`)
             const fromConnection = await getConnection(from)
             if (!fromConnection) return
-            await cloneConnection(to, fromConnection)
+            const toConnection = await cloneConnection(to, fromConnection)
             setSocket(to, socket)
             await deleteConnection(from)
             // send acknowledge to client
-            io.emit('cnx-transfer-ack', to)
+            // io.emit('cnx-transfer-ack', toConnection.data)
+            io.emit('cnx-transfer-ack', toConnection)
          })
 
          /*
