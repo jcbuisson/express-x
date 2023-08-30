@@ -360,13 +360,17 @@ export function expressX(prisma, options = {}) {
          // handle connection data transfer caused by a disconnection/reconnection (page reload, network issue, etc.)
          socket.on('cnx-transfer', async ({ from, to }) => {
             app.log('verbose', `cnx-transfer from ${from} to ${to}`)
+            // copy connection data from 'from' to 'to'
             const fromConnection = await getConnection(from)
             if (!fromConnection) return
             const toConnection = await cloneConnection(to, fromConnection)
+            // associate socket to 'to'
             setSocket(to, socket)
+            // transfer timer from 'from' to 'to'
+            setTimer(to, getTimer(from))
+            // delete 'from'
             await deleteConnection(from)
             // send acknowledge to client
-            // io.emit('cnx-transfer-ack', toConnection.data)
             io.emit('cnx-transfer-ack', toConnection)
          })
 
