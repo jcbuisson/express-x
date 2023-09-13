@@ -371,7 +371,7 @@ export function expressX(prisma, options = {}) {
             // delete 'from'
             await deleteConnection(from)
             // send acknowledge to client
-            io.emit('cnx-transfer-ack', toConnection)
+            socket.emit('cnx-transfer-ack', toConnection)
          })
 
          /*
@@ -401,25 +401,25 @@ export function expressX(prisma, options = {}) {
                         })
                      } catch(err) {
                         app.log('error', err.toString())
-                        io.emit('client-response', {
+                        socket.emit('client-response', {
                            uid,
                            error: err.toString(),
                         })
                      }
                   } else {
-                     io.emit('client-response', {
+                     socket.emit('client-response', {
                         uid,
                         error: `there is no method named '${action}' for service '${name}'`,
                      })
                   }
                } catch(error) {
-                  io.emit('client-response', {
+                  socket.emit('client-response', {
                      uid,
                      error,
                   })
                }
             } else {
-               io.emit('client-response', {
+               socket.emit('client-response', {
                   uid,
                   error: `there is no service named '${name}'`,
                })
