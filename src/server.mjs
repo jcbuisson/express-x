@@ -379,7 +379,7 @@ export function expressX(prisma, options = {}) {
          * Emit in return a 'client-response' message
          */
          socket.on('client-request', async ({ uid, name, action, args }) => {
-            app.log('verbose', `client-request ${uid} ${name} ${action} ${JSON.stringify(args)}`)
+            app.log('verbose', `client-request ${connection.id} ${uid} ${name} ${action} ${JSON.stringify(args)}`)
             if (name in services) {
                const service = services[name]
                try {
@@ -394,7 +394,7 @@ export function expressX(prisma, options = {}) {
                      try {
                         const result = await serviceMethod(context, ...args)
                         const trimmedResult = result ? JSON.stringify(result).slice(0, 300) : ''
-                        app.log('verbose', `client-response ${uid} ${trimmedResult}`)
+                        app.log('verbose', `client-response ${connection.id} ${uid} ${trimmedResult}`)
                         socket.emit('client-response', {
                            uid,
                            result,
