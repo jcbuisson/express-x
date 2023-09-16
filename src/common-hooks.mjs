@@ -2,7 +2,7 @@
 import bcrypt from 'bcryptjs'
 
 import { getConnectionDataItem } from './context.mjs'
-import { MyCustomError } from '.server.mjs'
+import { MyCustomError } from './server.mjs'
 
 
 // hash password of user record
