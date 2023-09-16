@@ -2,6 +2,7 @@
 import bcrypt from 'bcryptjs'
 
 import { getConnectionDataItem } from './context.mjs'
+import { MyCustomError } from '.server.mjs'
 
 
 // hash password of user record
@@ -25,21 +26,24 @@ export function protect(field) {
    }
 }
 
+
 export async function isAuthenticated(context) {
-   if (context.transport !== 'ws') return
    // extract sessionId from connection data
    const sessionId = await getConnectionDataItem(context, 'sessionId')
-   if (!sessionId) throw Error(`Not authenticated (no sessionId in connection data)`)
+   if (!sessionId) throw new MyCustomError("not authenticated", 'not-authenticated')
 }
 
 export const isNotExpired = async (context) => {
-   if (context.transport !== 'ws') return
-   const expireAtISO = await getConnectionDataItem(context, 'expireAt')
-   const expireAt = new Date(expireAtISO)
-   const now = new Date()
-   if (now > expireAt) {
-      // DON'T CLEAR CONNECTION DATA, LOGOUT WILL NOT BE ABLE TO RETRIEVE SESSIONID
-      // throw exception
-      throw new Error('session expired')
+   const expireAt = await getConnectionDataItem(context, 'expireAt')
+   if (expireAt) {
+      const expireAtDate = new Date(expireAt)
+      const now = new Date()
+      if (now > expireAtDate) {
+         // expiration date is met: clear connection data & throw exception
+         await resetConnection(context)
+         throw new MyCustomError("session expired", 'session-expired')
+      }
+   } else {
+      throw new MyCustomError("session expired", 'session-expired')
    }
 }
