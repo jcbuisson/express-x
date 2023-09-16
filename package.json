@@ -1,6 +1,6 @@
 {
   "name": "@jcbuisson/express-x",
-  "version": "1.6.11",
+  "version": "1.6.12",
   "description": "",
   "type": "module",
   "main": "src/index.mjs",

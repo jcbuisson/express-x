@@ -3,6 +3,14 @@ import http from 'http'
 import { Server } from "socket.io"
 import express from 'express'
 
+export class MyCustomError extends Error {
+   constructor(message, code) {
+      super(message);
+      this.name = 'MyCustomError'
+      this.code = code
+   }
+}
+
 /*
  * Enhance `app` express application with services and real-time features
  */
@@ -401,27 +409,29 @@ export function expressX(prisma, options = {}) {
                         })
                      } catch(err) {
                         app.log('error', err.toString())
+                        app.log('verbose', err.stack)
                         socket.emit('client-response', {
                            uid,
-                           error: err.toString(),
+                           error: new MyCustomError(err.message, err.code),
                         })
                      }
                   } else {
                      socket.emit('client-response', {
                         uid,
-                        error: `there is no method named '${action}' for service '${name}'`,
+                        error: new MyCustomError(`there is no method named '${action}' for service '${name}'`, missing-method),
                      })
                   }
                } catch(error) {
+                  app.log('verbose', error.stack)
                   socket.emit('client-response', {
                      uid,
-                     error,
-                  })
+                     error: new MyCustomError("unknown error", 'unknown-error'),
+               })
                }
             } else {
                socket.emit('client-response', {
                   uid,
-                  error: `there is no service named '${name}'`,
+                  error: new MyCustomError(`there is no service named '${name}'`, 'missing-service'),
                })
             }
          })
