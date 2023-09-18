@@ -406,7 +406,7 @@ export function expressX(prisma, options = {}) {
                   } else {
                      socket.emit('client-response', {
                         uid,
-                        error: new MyCustomError(`there is no method named '${action}' for service '${name}'`, missing-method),
+                        error: new MyCustomError(`there is no method named '${action}' for service '${name}'`, 'missing-method'),
                      })
                   }
                } catch(error) {
