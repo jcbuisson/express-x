@@ -17,6 +17,4 @@ export {
 
    hashPassword,
    protect,
-   isAuthenticated,
-   isNotExpired,
 }
