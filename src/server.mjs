@@ -3,14 +3,6 @@ import http from 'http'
 import { Server } from "socket.io"
 import express from 'express'
 
-export class MyCustomError extends Error {
-   constructor(message, code) {
-      super(message);
-      this.name = 'MyCustomError'
-      this.code = code
-   }
-}
-
 /*
  * Enhance `app` express application with services and real-time features
  */
@@ -182,7 +174,7 @@ export function expressX(prisma, options = {}) {
    function service(name) {
       // get service from `services` cache
       if (name in services) return services[name]
-      throw Error(`there is no service named '${name}'`)
+      app.log('error', `there is no service named '${name}'`, 'missing-service')
    }
 
    function configure(callback) {
@@ -389,6 +381,7 @@ export function expressX(prisma, options = {}) {
 
                      try {
                         const result = await serviceMethod(context, ...args)
+
                         const trimmedResult = result ? JSON.stringify(result).slice(0, 300) : ''
                         app.log('verbose', `client-response ${connection.id} ${uid} ${trimmedResult}`)
                         socket.emit('client-response', {
@@ -396,30 +389,43 @@ export function expressX(prisma, options = {}) {
                            result,
                         })
                      } catch(err) {
-                        app.log('error', err.toString())
+                        console.log('!!!!!!error', err.code, err)
                         app.log('verbose', err.stack)
                         socket.emit('client-response', {
                            uid,
-                           error: new MyCustomError(err.message, err.code),
+                           error: {
+                              code: err.code || 'unknown-error',
+                              message: err.stack,
+                           }
                         })
                      }
                   } else {
                      socket.emit('client-response', {
                         uid,
-                        error: new MyCustomError(`there is no method named '${action}' for service '${name}'`, 'missing-method'),
+                        error: {
+                           code: 'missing-method',
+                           message: `there is no method named '${action}' for service '${name}'`,
+                        }
                      })
                   }
                } catch(error) {
+                  console.log('err', err)
                   app.log('verbose', error.stack)
                   socket.emit('client-response', {
                      uid,
-                     error: new MyCustomError("unknown error", 'unknown-error'),
-               })
+                     error: {
+                        code: err.code || 'unknown-error',
+                        message: error.stack,
+                     }
+                  })
                }
             } else {
                socket.emit('client-response', {
                   uid,
-                  error: new MyCustomError(`there is no service named '${name}'`, 'missing-service'),
+                  error: {
+                     code: 'missing-service',
+                     message: `there is no service named '${name}'`,
+                  }
                })
             }
          })

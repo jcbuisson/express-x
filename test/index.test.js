@@ -137,3 +137,33 @@ describe('HTTP/REST API', () => {
       app.server.close()
    })
 })
+
+
+describe('Error codes', () => {
+
+   before(async () => {
+      app.createDatabaseService('User')
+      app.createDatabaseService('Post')
+
+      await app.service('User').deleteMany()
+      await app.service('Post').deleteMany()
+   })
+
+   it("can detect 'missing-service' error", async () => {
+      try {
+         await app.service('users').findMany({})
+      } catch(err) {
+         assert(err.code === 'missing-service')
+      }
+   })
+
+   // it("can detect 'missing-method' error", async () => {
+   //    try {
+   //       await app.service('User').dummyMethod({})
+   //    } catch(err) {
+   //       console.log('err', err)
+   //       assert(err.code === 'missing-method')
+   //    }
+   // })
+
+})
