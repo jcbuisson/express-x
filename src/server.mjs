@@ -2,6 +2,7 @@
 import http from 'http'
 import { Server } from "socket.io"
 import express from 'express'
+import config from 'config'
 
 /*
  * Enhance `app` express application with services and real-time features
@@ -45,7 +46,7 @@ export function expressX(prisma, options = {}) {
       try {
          await prisma.Connection.delete({ where: { id }})
       } catch(err) {
-         // it may be necessary in rare situations (not sure...)
+         // in case it would no longer exist
       }
    }
 
@@ -334,7 +335,7 @@ export function expressX(prisma, options = {}) {
          socket.on('disconnect', () => {
             app.log('verbose', `Client disconnected ${connection.id}`)
 
-            // remove connection record after 1mn (leaves time in case of connection transfer)
+            // remove connection record after expiration delay, if it still exists
             setTimeout(async () => {
                const connectionId = connection.id
                // check if connection still exists
@@ -343,7 +344,7 @@ export function expressX(prisma, options = {}) {
                   app.log('verbose', `Delete connection ${connectionId}`)
                   await deleteConnection(connectionId)
                }
-            }, 10 * 1000)
+            }, config.SESSION_EXPIRE_DELAY || 24*60*60000)
          })
 
          
