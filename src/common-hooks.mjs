@@ -1,6 +1,8 @@
 
 import bcrypt from 'bcryptjs'
 
+import { getConnectionDataItem } from './context.mjs'
+
 
 // hash password of user record
 export const hashPassword = (passwordField) => async (context) => {
@@ -20,5 +22,27 @@ export function protect(field) {
          delete context.result[field]
       }
       return (context)
+   }
+}
+
+
+export async function isAuthenticated(context) {
+   // extract sessionId from connection data
+   const sessionId = await getConnectionDataItem(context, 'sessionId')
+   if (!sessionId) throw new Error('not-authenticated')
+}
+
+export const isNotExpired = async (context) => {
+   const expireAt = await getConnectionDataItem(context, 'expireAt')
+   if (expireAt) {
+      const expireAtDate = new Date(expireAt)
+      const now = new Date()
+      if (now > expireAtDate) {
+         // expiration date is met: clear connection data & throw exception
+         await resetConnection(context)
+         throw new Error('session-expired')
+      }
+   } else {
+      throw new Error('session-expired')
    }
 }
