@@ -1,6 +1,6 @@
 
-import http from 'http'
-import { Server } from "socket.io"
+import { createServer } from 'http'
+import { Server } from 'socket.io'
 import express from 'express'
 
 /*
@@ -313,14 +313,14 @@ export function expressX(prisma, config) {
    /*
     * Create HTTP server
    */
-   const server = new http.Server(app)
+   const httpServer = createServer()
 
    if (config.WS_TRANSPORT) {
       /*
       * Add websocket transport
       */
-      const io = new Server(server, {
-         path: config.WS_PATH || '/expressx-socket-io',
+      const io = new Server(httpServer, {
+         path: config.WS_PATH || '/socket.io/',
       })
       
       
@@ -469,7 +469,7 @@ export function expressX(prisma, config) {
       configure,
       hooks,
       addHttpRest,
-      server,
+      httpServer,
       joinChannel,
       leaveChannel,
    })
