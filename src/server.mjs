@@ -10,6 +10,9 @@ export function expressX(prisma, config) {
 
    const app = express()
 
+   // so that config can be accessed anywhere with app.get('config')
+   app.set('config', config)
+
    // websocket transport by default
    if (config.WS_TRANSPORT == undefined) config.WS_TRANSPORT = true
 
@@ -316,7 +319,10 @@ export function expressX(prisma, config) {
       /*
       * Add websocket transport
       */
-      const io = new Server(server)
+      const io = new Server(server, {
+         path: config.WS_PATH || '/expressx-socket-io',
+      })
+      
       
       io.on('connection', async function(socket) {
          const clientIP = socket.request?.connection?.remoteAddress || 'unknown'
@@ -456,7 +462,6 @@ export function expressX(prisma, config) {
    // enhance `app` with objects and methods
    return Object.assign(app, {
       prisma,
-      config,
       getSocket, setSocket,
       createDatabaseService,
       createService,
