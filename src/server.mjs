@@ -2,16 +2,16 @@
 import http from 'http'
 import { Server } from "socket.io"
 import express from 'express'
-import config from 'config'
 
 /*
  * Enhance `app` express application with services and real-time features
  */
-export function expressX(prisma, options = {}) {
+export function expressX(prisma, config) {
 
    const app = express()
 
-   if (options.ws === undefined) options.ws = { ws_prefix: "expressx" }
+   // websocket transport by default
+   if (config.WS_TRANSPORT == undefined) config.WS_TRANSPORT = true
 
    const services = {}
    let appHooks = []
@@ -121,7 +121,7 @@ export function expressX(prisma, options = {}) {
             }
 
             // publish event (websocket transport)
-            if (options.ws && service.publishFunction) {
+            if (config.WS_TRANSPORT && service.publishFunction) {
                const channelNames = await service.publishFunction(result, app)
                app.log('verbose', `publish channels ${service.name} ${methodName} ${channelNames}`)
                const connections = await app.prisma.Connection.findMany({})
@@ -312,7 +312,7 @@ export function expressX(prisma, options = {}) {
    */
    const server = new http.Server(app)
 
-   if (options.ws) {
+   if (config.WS_TRANSPORT) {
       /*
       * Add websocket transport
       */
@@ -456,7 +456,7 @@ export function expressX(prisma, options = {}) {
    // enhance `app` with objects and methods
    return Object.assign(app, {
       prisma,
-      options,
+      config,
       getSocket, setSocket,
       createDatabaseService,
       createService,
