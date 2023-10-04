@@ -1,5 +1,5 @@
 
-import { createServer } from 'http'
+import http from 'http'
 import { Server } from 'socket.io'
 import express from 'express'
 
@@ -313,7 +313,7 @@ export function expressX(prisma, config) {
    /*
     * Create HTTP server
    */
-   const httpServer = createServer()
+   const httpServer = new http.Server(app)
 
    if (config.WS_TRANSPORT) {
       /*
