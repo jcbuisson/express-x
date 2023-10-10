@@ -125,7 +125,7 @@ export function expressX(prisma, config) {
 
             // publish event (websocket transport)
             if (config.WS_TRANSPORT && service.publishFunction) {
-               const channelNames = await service.publishFunction(result, app)
+               const channelNames = await service.publishFunction(result, methodName)
                app.log('verbose', `publish channels ${service.name} ${methodName} ${channelNames}`)
                const connections = await app.prisma.Connection.findMany({})
                for (const channelName of channelNames) {
