@@ -202,15 +202,16 @@ export function expressX(prisma, config) {
       }
 
       // introspect schema and return a map: field name => prisma type
-      async function getTypesMap() {
-         const dmmf = await service.prisma._getDmmf()
-         const fieldDescriptions = dmmf.modelMap[service.name].fields
+      function getTypesMap() {
+         // const dmmf = await service.prisma._getDmmf()
+         // const fieldDescriptions = dmmf.modelMap[service.name].fields
+         const dmmf = service.prisma._runtimeDataModel
+         const fieldDescriptions = dmmf.models[service.name].fields
          return fieldDescriptions.reduce((accu, descr) => {
             accu[descr.name] = descr.type
             return accu
          }, {})
       }
-
 
       app.post(path, async (req, res) => {
          app.log('verbose', `http request POST ${req.url}`)
@@ -232,7 +233,7 @@ export function expressX(prisma, config) {
             // the values in `req.query` are all strings, but Prisma need proper types
             // we need to introspect column types and do the proper transtyping
             for (const fieldName in query) {
-               const typesDict = await getTypesMap()
+               const typesDict = getTypesMap()
                const fieldType = typesDict[fieldName]
 
                if (fieldType === 'Int') {
@@ -333,7 +334,6 @@ export function expressX(prisma, config) {
          setSocket(connection.id, socket)
 
          // emit 'connection' event for app (expressjs extends EventEmitter)
-         console.log('EMIT CONNECTION')
          app.emit('connection', connection)
 
          // send 'connected' event to client
