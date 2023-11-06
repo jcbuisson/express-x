@@ -3,6 +3,8 @@ import http from 'http'
 import { Server } from 'socket.io'
 import express from 'express'
 
+import { getDMMF } from '@prisma/internals'
+
 /*
  * Enhance `app` express application with services and real-time features
  */
@@ -88,7 +90,7 @@ export function expressX(prisma, config) {
     * create a service `name` with given `methods`
     */
    function createService(name, methods) {
-      const service = { name }
+      const service = { _name: name }
 
       for (const methodName in methods) {
          const method = methods[methodName]
@@ -105,8 +107,8 @@ export function expressX(prisma, config) {
 
             // call 'before' hooks, possibly modifying `context`
             const beforeAppHooks = appHooks?.before || []
-            const beforeMethodHooks = service?.hooks?.before && service.hooks.before[methodName] || []
-            const beforeAllHooks = service?.hooks?.before?.all || []
+            const beforeMethodHooks = service?._hooks?.before && service._hooks.before[methodName] || []
+            const beforeAllHooks = service?._hooks?.before?.all || []
             for (const hook of [...beforeAppHooks, ...beforeMethodHooks, ...beforeAllHooks]) {
                await hook(context)
             }
@@ -117,8 +119,8 @@ export function expressX(prisma, config) {
             context.result = result
 
             // call 'after' hooks, possibly modifying `context`
-            const afterMethodHooks = service?.hooks?.after && service.hooks.after[methodName] || []
-            const afterAllHooks = service?.hooks?.after?.all || []
+            const afterMethodHooks = service?._hooks?.after && service._hooks.after[methodName] || []
+            const afterAllHooks = service?._hooks?.after?.all || []
             const afterAppHooks = appHooks?.after || []
             for (const hook of [...afterMethodHooks, ...afterAllHooks, ...afterAppHooks]) {
                await hook(context)
@@ -127,10 +129,10 @@ export function expressX(prisma, config) {
             // publish event (websocket transport)
             if (config.WS_TRANSPORT && service.publishFunction) {
                const channelNames = await service.publishFunction(context)
-               app.log('verbose', `publish channels ${service.name} ${methodName} ${channelNames}`)
+               app.log('verbose', `publish channels ${service._name} ${methodName} ${channelNames}`)
                const connections = await app.prisma.Connection.findMany({})
                for (const channelName of channelNames) {
-                  app.log('verbose', `service-event ${service.name} ${methodName} ${channelName}`)
+                  app.log('verbose', `service-event ${service._name} ${methodName} ${channelName}`)
                   const connectionList = connections.filter(connection => {
                      const channelNames = JSON.parse(connection.channelNames)
                      return channelNames.includes(channelName)
@@ -138,11 +140,11 @@ export function expressX(prisma, config) {
             
                   for (const connection of connectionList) {
                      const trimmedResult = result ? JSON.stringify(result).slice(0, 300) : ''
-                     app.log('verbose', `emit to ${connection.id} ${service.name} ${methodName} ${trimmedResult}`)
+                     app.log('verbose', `emit to ${connection.id} ${service._name} ${methodName} ${trimmedResult}`)
                      const socket = getSocket(connection.id)
                      // emit service event
                      socket && socket.emit('service-event', {
-                        name: service.name,
+                        name: service._name,
                         action: methodName,
                         result,
                      })
@@ -153,11 +155,14 @@ export function expressX(prisma, config) {
             return context.result
          }
 
-         // TODO: NOT CLEAR AND PROBABLY USELESS
-         // hooked version of method: `create`, etc., to be called from backend with no context
-         service[methodName] = method
-         // un-hooked version of method: `_create`, etc., to be called from backend with no context
-         service['_' + methodName] = method
+         // hooked version of method to be used server-side
+         service[methodName] = (...args) => {
+            const context = {
+               caller: 'server'
+            }
+            const hookedMethod = service['__' + methodName]
+            return hookedMethod(context, ...args)
+         }
       }
 
       // attach pub/sub publish callback
@@ -167,7 +172,7 @@ export function expressX(prisma, config) {
 
       // attach hooks
       service.hooks = (hooks) => {
-         service.hooks = hooks
+         service._hooks = hooks
       }
 
       // cache service in `services`
@@ -196,22 +201,24 @@ export function expressX(prisma, config) {
     */
    async function addHttpRest(path, service) {
       const context = {
+         caller: 'client',
          app,
          transport: 'http',
-         params: { name: service.name }
+         params: { name: service._name }
       }
 
       // introspect schema and return a map: field name => prisma type
       function getTypesMap() {
          // const dmmf = await service.prisma._getDmmf()
-         // const fieldDescriptions = dmmf.modelMap[service.name].fields
+         // const fieldDescriptions = dmmf.modelMap[service._name].fields
          const dmmf = service.prisma._runtimeDataModel
-         const fieldDescriptions = dmmf.models[service.name].fields
+         const fieldDescriptions = dmmf.models[service._name].fields
          return fieldDescriptions.reduce((accu, descr) => {
             accu[descr.name] = descr.type
             return accu
          }, {})
       }
+
 
       app.post(path, async (req, res) => {
          app.log('verbose', `http request POST ${req.url}`)
@@ -309,7 +316,7 @@ export function expressX(prisma, config) {
          }
       })
 
-      app.log('info', `added HTTP endpoints for service '${service.name}' at path '${path}'`)
+      app.log('info', `added HTTP endpoints for service '${service._name}' at path '${path}'`)
    }
 
    /*
@@ -382,6 +389,7 @@ export function expressX(prisma, config) {
                   const serviceMethod = service['__' + action]
                   if (serviceMethod) {
                      const context = {
+                        caller: 'client',
                         app,
                         transport: 'ws',
                         params: { connectionId: connection.id, name, action, args },
