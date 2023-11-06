@@ -1,6 +1,6 @@
 {
   "name": "@jcbuisson/express-x",
-  "version": "1.7.11",
+  "version": "1.7.12",
   "description": "",
   "type": "module",
   "main": "src/index.mjs",
@@ -12,14 +12,12 @@
   "license": "MIT",
   "private": false,
   "scripts": {
-    "test": "node --test",
     "generate": "npx prisma generate",
     "migrate": "npx prisma migrate dev --name init"
   },
   "keywords": [],
   "dependencies": {
     "@prisma/client": "^4.10.1",
-    "axios": "^1.4.0",
     "bcryptjs": "^2.4.3",
     "config": "^3.3.9",
     "express": "^4.18.2",

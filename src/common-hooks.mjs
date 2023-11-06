@@ -4,14 +4,20 @@ import bcrypt from 'bcryptjs'
 import { getConnectionDataItem } from './context.mjs'
 
 
-// hash password of user record
+/*
+ * Hash password of user record
+ * To be used as an 'after' hook for users service methods
+*/
 export const hashPassword = (passwordField) => async (context) => {
-   // context.result is a user
-   context.result[passwordField] = await bcrypt.hash(context.result[passwordField], 5)
+   const user = context.result
+   user[passwordField] = await bcrypt.hash(user[passwordField], 5)
    return context
 }
 
-// remove `field` from `result`
+
+/*
+ * Remove `field` from `context.result`
+*/
 export function protect(field) {
    return async (context) => {
       if (Array.isArray(context.result)) {
@@ -25,13 +31,11 @@ export function protect(field) {
    }
 }
 
-
-export async function isAuthenticated(context) {
-   // extract sessionId from connection data
-   const sessionId = await getConnectionDataItem(context, 'sessionId')
-   if (!sessionId) throw new Error('not-authenticated')
-}
-
+/*
+ * Check if the 'expireAt' key in connection data is met
+ * If it is met, throw an error (which will be sent back to the calling server or client) and reset connection data
+ * If not, do nothing. If needed, an application-level hook may automatically extend the expiration data at each service call
+*/
 export const isNotExpired = async (context) => {
    const expireAt = await getConnectionDataItem(context, 'expireAt')
    if (expireAt) {

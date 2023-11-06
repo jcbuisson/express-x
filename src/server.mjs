@@ -97,12 +97,13 @@ export function expressX(prisma, config) {
          // `context` is the context of execution (transport type, connection, app)
          // `args` is the list of arguments of the method
          service['__' + methodName] = async (context, ...args) => {
+            // put args into context
             context.args = args
 
             // if a hook or the method throws an error, it will be caught by `socket.on('client-request'` (ws)
             // or by express (http) and the client will get a rejected promise
 
-            // call 'before' hooks, modifying `context`
+            // call 'before' hooks, possibly modifying `context`
             const beforeAppHooks = appHooks?.before || []
             const beforeMethodHooks = service?.hooks?.before && service.hooks.before[methodName] || []
             const beforeAllHooks = service?.hooks?.before?.all || []
@@ -115,7 +116,7 @@ export function expressX(prisma, config) {
             // put result into context
             context.result = result
 
-            // call 'after' hooks, modifying `context`
+            // call 'after' hooks, possibly modifying `context`
             const afterMethodHooks = service?.hooks?.after && service.hooks.after[methodName] || []
             const afterAllHooks = service?.hooks?.after?.all || []
             const afterAppHooks = appHooks?.after || []
