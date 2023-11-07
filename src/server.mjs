@@ -156,7 +156,11 @@ export function expressX(prisma, config) {
          // hooked version of method to be used server-side
          service[methodName] = (...args) => {
             const context = {
-               caller: 'server'
+               app,
+               caller: 'server',
+               serviceName: service._name,
+               methodName,
+               args,
             }
             const hookedMethod = service['__' + methodName]
             return hookedMethod(context, ...args)
@@ -199,16 +203,16 @@ export function expressX(prisma, config) {
     */
    async function addHttpRest(path, service) {
       const context = {
-         caller: 'client',
          app,
+         caller: 'client',
          transport: 'http',
-         params: { name: service._name }
+         serviceName: service._name,
+
+         // params: { name: service._name }
       }
 
       // introspect schema and return a map: field name => prisma type
       function getTypesMap() {
-         // const dmmf = await service.prisma._getDmmf()
-         // const fieldDescriptions = dmmf.modelMap[service._name].fields
          const dmmf = service.prisma._runtimeDataModel
          const fieldDescriptions = dmmf.models[service._name].fields
          return fieldDescriptions.reduce((accu, descr) => {
@@ -220,7 +224,7 @@ export function expressX(prisma, config) {
 
       app.post(path, async (req, res) => {
          app.log('verbose', `http request POST ${req.url}`)
-         context.params.req = req
+         context.req = req
          try {
             const value = await service.__create(context, { data: req.body })
             res.json(value)
@@ -232,7 +236,7 @@ export function expressX(prisma, config) {
 
       app.get(path, async (req, res) => {
          app.log('verbose', `http request GET ${req.url}`)
-         context.params.req = req
+         context.req = req
          const query = { ...req.query }
          try {
             // the values in `req.query` are all strings, but Prisma need proper types
@@ -267,7 +271,7 @@ export function expressX(prisma, config) {
 
       app.get(`${path}/:id`, async (req, res) => {
          app.log('verbose', `http request GET ${req.url}`)
-         context.params.req = req
+         context.req = req
          try {
             const value = await service.__findUnique(context, {
                where: {
@@ -283,7 +287,7 @@ export function expressX(prisma, config) {
 
       app.patch(`${path}/:id`, async (req, res) => {
          app.log('verbose', `http request PATCH ${req.url}`)
-         context.params.req = req
+         context.req = req
          try {
             const value = await service.__update(context, {
                where: {
@@ -300,7 +304,7 @@ export function expressX(prisma, config) {
 
       app.delete(`${path}/:id`, async (req, res) => {
          app.log('verbose', `http request DELETE ${req.url}`)
-         context.params.req = req
+         context.req = req
          try {
             const value = await service.__delete(context, {
                where: {
@@ -387,10 +391,15 @@ export function expressX(prisma, config) {
                   const serviceMethod = service['__' + action]
                   if (serviceMethod) {
                      const context = {
-                        caller: 'client',
                         app,
+                        caller: 'client',
                         transport: 'ws',
-                        params: { connectionId: connection.id, name, action, args },
+                        connectionId: connection.id,
+                        serviceName: name,
+                        methodName: action,
+                        args,
+
+                        // params: { connectionId: connection.id, name, action, args },
                      }
 
                      try {
