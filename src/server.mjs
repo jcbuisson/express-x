@@ -3,8 +3,6 @@ import http from 'http'
 import { Server } from 'socket.io'
 import express from 'express'
 
-import { getDMMF } from '@prisma/internals'
-
 /*
  * Enhance `app` express application with services and real-time features
  */
