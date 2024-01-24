@@ -6,6 +6,9 @@ import express from 'express'
 /*
  * Enhance `app` express application with services and real-time features
  */
+
+// export function expressX(prisma, connectionAdapter, options) {
+
 export function expressX(prisma, config) {
 
    const app = express()
