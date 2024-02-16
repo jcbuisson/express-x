@@ -1,6 +1,6 @@
 {
   "name": "@jcbuisson/express-x",
-  "version": "1.8.4",
+  "version": "2.0.0",
   "description": "",
   "type": "module",
   "main": "src/index.mjs",
@@ -17,7 +17,6 @@
   },
   "keywords": [],
   "dependencies": {
-    "@prisma/client": "^4.10.1",
     "bcryptjs": "^2.4.3",
     "config": "^3.3.9",
     "express": "^4.18.2",

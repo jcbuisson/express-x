@@ -1,20 +1,11 @@
 
 import { expressX } from './server.mjs'
 import { hashPassword, protect, isNotExpired } from './common-hooks.mjs'
-import { getContextConnection, resetConnection, getConnectionDataItem, setConnectionDataItem, removeConnectionDataItem, sendServiceEventToClient } from './context.mjs'
 
 export {
    expressX,
 
-   getContextConnection,
-   resetConnection,
-   
-   getConnectionDataItem,
-   setConnectionDataItem,
-   removeConnectionDataItem,
-   
-   sendServiceEventToClient,
-
+   addTimestamp,
    hashPassword,
    protect,
    isNotExpired,

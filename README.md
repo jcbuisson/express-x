@@ -33,23 +33,17 @@ backed in a [Prisma](https://www.prisma.io/) database
 
 ```js
 // app.js
-import bodyParser from 'body-parser'
 import { expressXServer } from '@jcbuisson/express-x'
 
 // `app` is a regular express application, enhanced with service and real-time features
 const app = expressX()
 
+// configure prisma client from schema
+const prisma = new PrismaClient()
+
 // create two CRUD database services. They provide Prisma methods: `create`, 'createMany', 'find', 'findMany', 'upsert', etc.
-app.createDatabaseService('User')
-app.createDatabaseService('Post')
-
-// add body parsers for http requests
-app.use(bodyParser.json())
-app.use(bodyParser.urlencoded({ extended: false }))
-
-// add http/rest endpoints
-app.addHttpRest('/api/user', app.service('User'))
-app.addHttpRest('/api/post', app.service('Post'))
+app.createService('User', prisma.User)
+app.createService('Post', prisma.Post)
 
 app.server.listen(8000, () => console.log(`App listening at http://localhost:8000`))
 ```
@@ -88,39 +82,17 @@ datasource db {
 
 Then create the database:
 ```bash
-npx prisma migrate dev --name init
+npx prisma db push
 ```
 
 The sqlite database file is created at `prisma/dev.db`
 
 
-## Run the application
+## Run the application on the server side
 
 ```bash
 node app.js
 ```
-
-It prints the following lines in the console:
-```bash
-created service 'user' over entity 'User'
-created service 'post' over entity 'Post'
-added HTTP endpoints for service 'user' at path '/api/user'
-added HTTP endpoints for service 'post' at path '/api/post'
-App listening at http://localhost:8000
-```
-
-
-## Enjoy your HTTP REST API
-
-Now you can try the HTTP endpoints `/api/user` and `/api/post`; open a new console and run HTTP requests:
-```bash
-curl -X POST -H 'Content-Type: application/json' -d '{"name":"JC"}' http://localhost:8000/api/user
-# --> {"id":1,"name":"JC"}
-curl http://localhost:8000/api/user
-# --> [{"id":1,"name":"JC"}]
-```
-
-With a few lines of code, we got a complete REST API over the database tables. But there is more!
 
 
 ## Use it with a websocket client
@@ -162,9 +134,9 @@ async function main() {
 main()
 ```
 
-For simplicity we use a node client, but you of course you would write something similar with your favorite front-end framework.
+For simplicity we use a node client, but you would write something similar with your favorite front-end framework.
 
-You can use on the client side the exact same statements on services as you would on the server side, such as: `app.service('User').create(...)`.
+You can use the exact same statements on services on the client side as you would on the server side, such as: `app.service('User').create(...)`.
 Of course the `app` object here on the client is quite different that the `app` object on the server; you can find explanations [here]().
 
 Now run the client script:
@@ -218,11 +190,11 @@ import { PrismaClient } from '@prisma/client'
 const app = expressX()
 
 // configure prisma client from schema
-app.set('prisma', new PrismaClient())
+const prisma = new PrismaClient()
 
 // create two CRUD database services. They provide Prisma methods: `create`, 'createMany', 'find', 'findMany', 'upsert', etc.
-app.createDatabaseService('User')
-app.createDatabaseService('Post')
+app.createService('User', prisma.User)
+app.createService('Post', prisma.Post)
 
 // publish
 app.service('User').publish(async (post, context) => {
@@ -233,9 +205,9 @@ app.service('Post').publish(async (post, context) => {
 })
 
 // subscribe
-app.on('connection', (connection) => {
-   console.log('connection', connection.id)
-   app.joinChannel('anonymous', connection)
+app.on('connection', (socket) => {
+   console.log('connection', socket.id)
+   app.joinChannel('anonymous', socket)
 })
 
 app.server.listen(8000, () => console.log(`App listening at http://localhost:8000`))
