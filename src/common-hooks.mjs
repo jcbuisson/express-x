@@ -41,9 +41,10 @@ export function protect(field) {
  * If not, do nothing. If needed, an application-level hook may automatically extend the expiration data at each service call
 */
 export const isNotExpired = async (context) => {
+   // return context
    if (context.caller !== 'client' || context.transport !== 'ws') return
    
-   const expireAt = context.socket.expireAt
+   const expireAt = context.socket.data.expireAt
    if (expireAt) {
       const expireAtDate = new Date(expireAt)
       const now = new Date()

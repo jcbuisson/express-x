@@ -6,7 +6,7 @@ import { Server } from "socket.io"
 export function expressX(config) {
 
    const services = {}
-   const appHooks = []
+   let appHooks = []
 
    const app = express()
    const httpServer = createServer(app)
@@ -231,6 +231,11 @@ export function expressX(config) {
       callback(app)
    }
 
+   // set application hooks
+   function hooks(hooks) {
+      appHooks = hooks
+   }
+
    // `app.service(name)` starts here!
    function service(name) {
       // get service from `services` cache
@@ -250,10 +255,12 @@ export function expressX(config) {
 
    // enhance `app` with objects and methods
    return Object.assign(app, {
+      io,
       httpServer,
       createService,
       service,
       configure,
+      hooks,
       joinChannel,
       leaveChannel,
    })
