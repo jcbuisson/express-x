@@ -1,6 +1,6 @@
 
 import { expressX } from './server.mjs'
-import { hashPassword, protect, isNotExpired } from './common-hooks.mjs'
+import { addTimestamp, hashPassword, protect, isNotExpired } from './common-hooks.mjs'
 
 export {
    expressX,
