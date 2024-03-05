@@ -35,14 +35,13 @@ export function protect(field) {
 }
 
 /*
- * Does nothing for calls which are not client-side with websocket transport
+ * Does nothing for calls which are not client-side
  * Check if the 'expireAt' key in socket.data is met
  * If it is met, throw an error (which will be sent back to the calling server or client) and reset socket.data
  * If not, do nothing. If needed, an application-level hook may automatically extend the expiration data at each service call
 */
 export const isNotExpired = async (context) => {
-   // return context
-   if (context.caller !== 'client' || context.transport !== 'ws') return
+   if (context.caller !== 'client') return
    
    const expireAt = context.socket.data.expireAt
    if (expireAt) {

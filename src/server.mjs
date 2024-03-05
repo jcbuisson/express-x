@@ -253,6 +253,12 @@ export function expressX(config) {
       socket.leave(channelName)
    }
 
+   // There is a need for events sent outside any service method call, for example on unsolicited-by-frontend backend state change
+   async function sendAppEvent(channelName, type, value) {
+      console.log('sendAppEvent', channelName, type, value)
+      io.to(channelName).emit('app-event', { type, value })
+   }
+
    // enhance `app` with objects and methods
    return Object.assign(app, {
       io,
@@ -263,6 +269,7 @@ export function expressX(config) {
       hooks,
       joinChannel,
       leaveChannel,
+      sendAppEvent,
    })
 
 }
