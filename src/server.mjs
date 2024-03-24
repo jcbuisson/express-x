@@ -140,7 +140,7 @@ export function expressX(config) {
     * create a service `name` with given `methods`
     */
    function createService(name, methods) {
-      const service = { name }
+      const service = {}
 
       for (const methodName in methods) {
          const method = methods[methodName]
@@ -188,7 +188,7 @@ export function expressX(config) {
                      sender = sender.to(channelNames[i])
                   }
                   sender.emit('service-event', {
-                     name: service.name,
+                     name,
                      action: methodName,
                      result,
                   })
