@@ -244,12 +244,12 @@ export function expressX(config) {
       app.log('error', `there is no service named '${name}'`, 'missing-service')
    }
 
-   async function joinChannel(channelName, socket) {
+   function joinChannel(channelName, socket) {
       app.log('verbose', `joining ${channelName}, ${JSON.stringify(socket.data)}`)
       socket.join(channelName)
    }
 
-   async function leaveChannel(channelName, socket) {
+   function leaveChannel(channelName, socket) {
       app.log('verbose', `leaving ${channelName}, ${JSON.stringify(socket.data)}`)
       socket.leave(channelName)
    }
