@@ -7,6 +7,11 @@ export function expressX(config) {
 
    const services = {}
    let appHooks = []
+   let socketConnectHandler = null
+
+   function onSocketConnect(func) {
+      socketConnectHandler = func
+   }
 
    const app = express()
    const httpServer = createServer(app)
@@ -33,29 +38,25 @@ export function expressX(config) {
    io.on('connection', async function(socket) {
       if (socket.recovered) {
          // recovery was successful: socket.id, socket.rooms and socket.data were restored
-         console.log('reconnection!!!', socket.id)
-
+         // (network/Wifi disconnections)
+         console.log('reconnection!!!', socket.id, socket.data)
       } else {
-         // new or unrecoverable session
-         console.log("connection", socket.id)
+         // new or unrecoverable connection
+         // (page open, page refresh/reload)
+         socket.data.clientIP = socket.handshake.address
       }
 
-      const clientIP = socket.handshake.address
-      socket.data = {
-         clientIP,
-      }
-      // app.log('verbose', `Client connected ${connectionId} from IP ${clientIP}`)
-      app.log('verbose', `Client connected ${socket.id} from IP ${clientIP}`)
+      app.log('verbose', `Client connected ${socket.id}`)
 
       // emit 'connection' event for app (expressjs extends EventEmitter)
       app.emit('connection', socket)
 
+      if (socketConnectHandler) socketConnectHandler(socket)
+
       // send 'connected' event to client
-      // socket.emit('connected', connectionId)
       socket.emit('connected', socket.id)
 
       socket.on('disconnect', () => {
-         // app.log('verbose', `Client disconnected ${connectionId}`)
          app.log('verbose', `Client disconnected ${socket.id}`)
       })
 
@@ -180,7 +181,7 @@ export function expressX(config) {
             if (service.publishFunction) {
                // collect channel names to socket is member of
                const channelNames = await service.publishFunction(context)
-               app.log('verbose', `publish channels ${service.name} ${methodName} ${channelNames}`)
+               app.log('verbose', `publish channels ${name} ${methodName} ${channelNames}`)
                // send event on all these channels
                if (channelNames.length > 0) {
                   let sender = io.to(channelNames[0])
@@ -270,6 +271,7 @@ export function expressX(config) {
       joinChannel,
       leaveChannel,
       sendAppEvent,
+      onSocketConnect,
    })
 
 }
