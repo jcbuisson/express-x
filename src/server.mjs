@@ -7,10 +7,21 @@ export function expressX(config) {
 
    const services = {}
    let appHooks = []
-   let socketConnectHandler = null
+   const socketConnectListeners = []
+   const socketDisconnectingListeners = []
+   const socketDisconnectListeners = []
 
-   function onSocketConnect(func) {
-      socketConnectHandler = func
+
+   function addSocketConnectListener(func) {
+      socketConnectListeners.push(func)
+   }
+
+   function addSocketDisconnectingListener(func) {
+      socketDisconnectingListeners.push(func)
+   }
+
+   function addSocketDisconnectListener(func) {
+      socketDisconnectListeners.push(func)
    }
 
    const app = express()
@@ -28,6 +39,9 @@ export function expressX(config) {
          skipMiddlewares: true,
       }
    })
+
+   // so that io server is accessible to hooks & services
+   app.set('io', io)
 
    // logging function - a winston logger must be configured first
    app.log = (severity, message) => {
@@ -51,13 +65,19 @@ export function expressX(config) {
       // emit 'connection' event for app (expressjs extends EventEmitter)
       app.emit('connection', socket)
 
-      if (socketConnectHandler) socketConnectHandler(socket)
+      socketConnectListeners.forEach(listener => listener(socket))
 
       // send 'connected' event to client
       socket.emit('connected', socket.id)
 
-      socket.on('disconnect', () => {
-         app.log('verbose', `Client disconnected ${socket.id}`)
+      socket.on('disconnecting', (reason) => {
+         app.log('verbose', `Client disconnecting ${socket.id}, ${reason}`)
+         socketDisconnectingListeners.forEach(listener => listener(socket, reason))
+      })
+
+      socket.on('disconnect', (reason) => {
+         app.log('verbose', `Client disconnect ${socket.id}, ${reason}`)
+         socketDisconnectListeners.forEach(listener => listener(socket, reason))
       })
 
       /*
@@ -271,7 +291,9 @@ export function expressX(config) {
       joinChannel,
       leaveChannel,
       sendAppEvent,
-      onSocketConnect,
+      addSocketConnectListener,
+      addSocketDisconnectingListener,
+      addSocketDisconnectListener,
    })
 
 }
