@@ -35,25 +35,30 @@ export function protect(field) {
 }
 
 /*
- * Does nothing for calls which are not client-side
- * Check if the 'expireAt' key in socket.data is met
- * If it is met, throw an error (which will be sent back to the calling server or client) and reset socket.data
- * If not, do nothing. If needed, an application-level hook may automatically extend the expiration data at each service call
+ * Throw an error for a client service method call when socket.data.expiresAt is missing or overdue
 */
 export const isNotExpired = async (context) => {
-   if (context.caller !== 'client') return
-   
-   const expireAt = context.socket.data.expireAt
-   if (expireAt) {
-      const expireAtDate = new Date(expireAt)
+   // do nothing if it's not a client call from a ws connexion
+   if (!context.socket) return
+   const expiresAt = context.socket.data.expiresAt
+   if (expiresAt) {
+      const expiresAtDate = new Date(expiresAt)
       const now = new Date()
-      if (now > expireAtDate) {
+      if (now > expiresAtDate) {
          // expiration date is met: clear socket.data & throw exception
-         const { clientIP } = socket.data
-         socket.data = { clientIP }
+         context.socket.data = {}
          throw new Error('session-expired')
       }
    } else {
       throw new Error('session-expired')
    }
+}
+
+/*
+ * Throw an error for a client service method call when socket.data does not contain user
+*/
+export const isAuthenticated = async (context) => {
+   // do nothing if it's not a client call from a ws connexion
+   if (!context.socket) return
+   if (!context.socket.data.user) throw new Error('not-authenticated')
 }

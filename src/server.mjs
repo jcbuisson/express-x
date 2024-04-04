@@ -3,6 +3,8 @@ import { createServer } from "http"
 import { Server } from "socket.io"
 
 
+// UTILISER L'ACKNOWLEDGEMENT : https://socket.io/docs/v4/#acknowledgements
+
 export function expressX(config) {
 
    const services = {}
@@ -12,15 +14,15 @@ export function expressX(config) {
    const socketDisconnectListeners = []
 
 
-   function addSocketConnectListener(func) {
+   function addConnectListener(func) {
       socketConnectListeners.push(func)
    }
 
-   function addSocketDisconnectingListener(func) {
+   function addDisconnectingListener(func) {
       socketDisconnectingListeners.push(func)
    }
 
-   function addSocketDisconnectListener(func) {
+   function addDisconnectListener(func) {
       socketDisconnectListeners.push(func)
    }
 
@@ -57,18 +59,17 @@ export function expressX(config) {
       } else {
          // new or unrecoverable connection
          // (page open, page refresh/reload)
-         socket.data.clientIP = socket.handshake.address
       }
 
       app.log('verbose', `Client connected ${socket.id}`)
 
-      // emit 'connection' event for app (expressjs extends EventEmitter)
-      app.emit('connection', socket)
+      // // emit 'connection' event for app (expressjs extends EventEmitter)
+      // app.emit('connection', socket)
 
       socketConnectListeners.forEach(listener => listener(socket))
 
-      // send 'connected' event to client
-      socket.emit('connected', socket.id)
+      // // send 'connected' event to client
+      // socket.emit('connected', socket.id)
 
       socket.on('disconnecting', (reason) => {
          app.log('verbose', `Client disconnecting ${socket.id}, ${reason}`)
@@ -114,13 +115,14 @@ export function expressX(config) {
                         result,
                      })
                   } catch(err) {
-                     console.log('!!!!!!error', err.code, err)
+                     console.log('!!!!!!error', err)
                      app.log('verbose', err.stack)
                      socket.emit('client-response', {
                         uid,
                         error: {
                            code: err.code || 'unknown-error',
-                           message: err.stack,
+                           message: err.message,
+                           stack: err.stack,
                         }
                      })
                   }
@@ -140,8 +142,9 @@ export function expressX(config) {
                   uid,
                   error: {
                      code: err.code || 'unknown-error',
-                     message: err.stack,
-                  }
+                     message: err.message,
+                     stack: err.stack,
+            }
                })
             }
          } else {
@@ -173,8 +176,8 @@ export function expressX(config) {
             // put args into context
             context.args = args
 
-            // if a hook or the method throws an error, it will be caught by `socket.on('client-request'` (ws)
-            // or by express (http) and the client will get a rejected promise
+            // if a hook or the method throws an error, it will be caught by `socket.on('client-request'`
+            // and the client will get a rejected promise
 
             // call 'before' hooks, possibly modifying `context`
             const beforeAppHooks = appHooks?.before || []
@@ -291,9 +294,9 @@ export function expressX(config) {
       joinChannel,
       leaveChannel,
       sendAppEvent,
-      addSocketConnectListener,
-      addSocketDisconnectingListener,
-      addSocketDisconnectListener,
+      addConnectListener,
+      addDisconnectingListener,
+      addDisconnectListener,
    })
 
 }
