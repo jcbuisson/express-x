@@ -115,7 +115,7 @@ export function expressX(config) {
                         result,
                      })
                   } catch(err) {
-                     console.log('!!!!!!error', err)
+                     console.log('!!!!!!error', err.code, err.message)
                      app.log('verbose', err.stack)
                      socket.emit('client-response', {
                         uid,
