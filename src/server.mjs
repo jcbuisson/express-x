@@ -8,7 +8,6 @@ import { Server } from "socket.io"
 export function expressX(config) {
 
    const services = {}
-   let appHooks = []
    const socketConnectListeners = []
    const socketDisconnectingListeners = []
    const socketDisconnectListeners = []
@@ -180,10 +179,9 @@ export function expressX(config) {
             // and the client will get a rejected promise
 
             // call 'before' hooks, possibly modifying `context`
-            const beforeAppHooks = appHooks?.before || []
             const beforeMethodHooks = service?._hooks?.before && service._hooks.before[methodName] || []
             const beforeAllHooks = service?._hooks?.before?.all || []
-            for (const hook of [...beforeAppHooks, ...beforeMethodHooks, ...beforeAllHooks]) {
+            for (const hook of [...beforeAllHooks, ...beforeMethodHooks]) {
                await hook(context)
             }
 
@@ -195,8 +193,7 @@ export function expressX(config) {
             // call 'after' hooks, possibly modifying `context`
             const afterMethodHooks = service?._hooks?.after && service._hooks.after[methodName] || []
             const afterAllHooks = service?._hooks?.after?.all || []
-            const afterAppHooks = appHooks?.after || []
-            for (const hook of [...afterMethodHooks, ...afterAllHooks, ...afterAppHooks]) {
+            for (const hook of [...afterMethodHooks, ...afterAllHooks]) {
                await hook(context)
             }
 
@@ -255,11 +252,6 @@ export function expressX(config) {
       callback(app)
    }
 
-   // set application hooks
-   function hooks(hooks) {
-      appHooks = hooks
-   }
-
    // `app.service(name)` starts here!
    function service(name) {
       // get service from `services` cache
@@ -290,7 +282,6 @@ export function expressX(config) {
       createService,
       service,
       configure,
-      hooks,
       joinChannel,
       leaveChannel,
       sendAppEvent,
