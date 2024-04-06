@@ -1,9 +1,6 @@
 
 import bcrypt from 'bcryptjs'
 
-import config from '#config'
-
-
 /*
  * Add a timestamp property of name `field` with current time as value
 */
