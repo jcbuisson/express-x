@@ -81,9 +81,9 @@ export const isAuthenticated = async (context) => {
 }
 
 /*
- * Extend value of socket.data.expiresAt
+ * Extend value of socket.data.expiresAt of `duration` milliseconds
 */
-export const extendExpiration = async (context) => {
+export const extendExpiration = async (context) => (duration) => {
    const now = new Date()
-   context.socket.data.expiresAt = new Date(now.getTime() + config.SESSION_EXPIRE_DELAY)
+   context.socket.data.expiresAt = new Date(now.getTime() + duration)
 }
