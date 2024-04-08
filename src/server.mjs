@@ -162,7 +162,7 @@ export function expressX(config) {
    /*
     * create a service `name` with given `methods`
     */
-   function createService(name, methods) {
+   function createService(serviceName, methods) {
       const service = {}
 
       for (const methodName in methods) {
@@ -201,7 +201,7 @@ export function expressX(config) {
             if (service.publishFunction) {
                // collect channel names to socket is member of
                const channelNames = await service.publishFunction(context)
-               app.log('verbose', `publish channels ${name} ${methodName} ${channelNames}`)
+               app.log('verbose', `publish channels ${serviceName} ${methodName} ${channelNames}`)
                // send event on all these channels
                if (channelNames.length > 0) {
                   let sender = io.to(channelNames[0])
@@ -209,7 +209,7 @@ export function expressX(config) {
                      sender = sender.to(channelNames[i])
                   }
                   sender.emit('service-event', {
-                     name,
+                     name: serviceName,
                      action: methodName,
                      result,
                   })
@@ -224,7 +224,7 @@ export function expressX(config) {
             const context = {
                app,
                caller: 'server',
-               serviceName: service._name,
+               serviceName,
                methodName,
                args,
             }
@@ -244,7 +244,7 @@ export function expressX(config) {
       }
 
       // cache service in `services`
-      services[name] = service
+      services[serviceName] = service
       return service
    }
 
