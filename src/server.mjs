@@ -5,6 +5,13 @@ import { Server } from "socket.io"
 
 // UTILISER L'ACKNOWLEDGEMENT : https://socket.io/docs/v4/#acknowledgements
 
+export default class EXError extends Error {
+   constructor(code, message) {
+      super(message)
+      this.code = code
+   }
+}
+
 export function expressX(config) {
 
    const services = {}
@@ -162,7 +169,7 @@ export function expressX(config) {
    /*
     * create a service `name` with given `methods`
     */
-   function createService(serviceName, methods) {
+   function createService(name, methods) {
       const service = {}
 
       for (const methodName in methods) {
@@ -201,7 +208,7 @@ export function expressX(config) {
             if (service.publishFunction) {
                // collect channel names to socket is member of
                const channelNames = await service.publishFunction(context)
-               app.log('verbose', `publish channels ${serviceName} ${methodName} ${channelNames}`)
+               app.log('verbose', `publish channels ${name} ${methodName} ${channelNames}`)
                // send event on all these channels
                if (channelNames.length > 0) {
                   let sender = io.to(channelNames[0])
@@ -209,7 +216,7 @@ export function expressX(config) {
                      sender = sender.to(channelNames[i])
                   }
                   sender.emit('service-event', {
-                     name: serviceName,
+                     name,
                      action: methodName,
                      result,
                   })
@@ -224,7 +231,7 @@ export function expressX(config) {
             const context = {
                app,
                caller: 'server',
-               serviceName,
+               serviceName: service._name,
                methodName,
                args,
             }
@@ -244,7 +251,7 @@ export function expressX(config) {
       }
 
       // cache service in `services`
-      services[serviceName] = service
+      services[name] = service
       return service
    }
 

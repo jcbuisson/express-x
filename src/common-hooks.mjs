@@ -1,6 +1,8 @@
 
 import bcrypt from 'bcryptjs'
 
+import { EXError } from './server.mjs'
+
 /*
  * Add a timestamp property of name `field` with current time as value
 */
@@ -34,13 +36,6 @@ export function protect(field) {
    }
 }
 
-class NotAuthenticatedError extends Error {
-   constructor(message) {
-      super(message)
-      this.code = 'not-authenticated'
-   }
-}
-
 export const isNotExpired = async (context) => {
    // do nothing if it's not a client call from a ws connexion
    if (!context.socket) return
@@ -61,10 +56,10 @@ export const isNotExpired = async (context) => {
          // send an event to the client (typical client handling: logout)
          context.socket.emit('expired')
          // throw exception
-         throw new NotAuthenticatedError("Session expired")
+         throw new EXError('not-authenticated', "Session expired")
       }
    } else {
-      throw new NotAuthenticatedError("No expiresAt in socket.data")
+      throw new EXError('not-authenticated', "No expiresAt in socket.data")
    }
 }
 
@@ -74,7 +69,7 @@ export const isNotExpired = async (context) => {
 export const isAuthenticated = async (context) => {
    // do nothing if it's not a client call from a ws connexion
    if (!context.socket) return
-   if (!context.socket.data.user) throw new NotAuthenticatedError('no user in socket.data')
+   if (!context.socket.data.user) throw new EXError('not-authenticated', 'no user in socket.data')
 }
 
 /*
