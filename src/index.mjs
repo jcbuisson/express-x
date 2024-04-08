@@ -310,7 +310,7 @@ export function expressX(config) {
    })
 }
 
-export default class EXError extends Error {
+export class EXError extends Error {
    constructor(code, message) {
       super(message)
       this.code = code
