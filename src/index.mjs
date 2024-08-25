@@ -1,19 +1,3 @@
-
-// import { expressX } from './server.mjs'
-// import { addTimestamp, hashPassword, protect, isAuthenticated, isNotExpired, extendExpiration } from './common-hooks.mjs'
-
-// export {
-//    expressX,
-
-//    addTimestamp,
-//    hashPassword,
-//    protect,
-//    isAuthenticated,
-//    isNotExpired,
-//    extendExpiration,
-// }
-
-
 import express from "express"
 import { createServer } from "http"
 import { Server } from "socket.io"
@@ -124,6 +108,9 @@ export function expressX(config) {
 
                   try {
                      // call method with context
+                     if (name === 'highlighted_part') {
+                        console.log('')
+                     }
                      const result = await serviceMethod(context, ...args)
 
                      const trimmedResult = result ? JSON.stringify(result).slice(0, 300) : ''
@@ -133,7 +120,7 @@ export function expressX(config) {
                         result,
                      })
                   } catch(err) {
-                     console.log('!!!!!!error', err.code, err.message)
+                     console.log('!!!!!!error', 'name', name, 'action', action, 'args', args, 'err.code', err.code, 'err.message', err.message)
                      app.log('verbose', err.stack)
                      socket.emit('client-response', {
                         uid,
@@ -356,7 +343,7 @@ export function protect(field) {
 export const isNotExpired = async (context) => {
    // do nothing if it's not a client call from a ws connexion
    if (!context.socket) return
-   const expiresAt = context.socket.data.expiresAt
+   const expiresAt = context.socket?.data?.expiresAt
    if (expiresAt) {
       const expiresAtDate = new Date(expiresAt)
       const now = new Date()
@@ -385,8 +372,9 @@ export const isNotExpired = async (context) => {
 */
 export const isAuthenticated = async (context) => {
    // do nothing if it's not a client call from a ws connexion
-   if (!context.socket) return
-   if (!context.socket.data.user) throw new EXError('not-authenticated', 'no user in socket.data')
+   if (context.caller !== 'client') return
+   if (!context.socket?.data) throw new EXError('not-authenticated', 'no data in socket')
+   if (!context.socket.data?.user) throw new EXError('not-authenticated', 'no user in socket.data')
 }
 
 /*
@@ -394,5 +382,7 @@ export const isAuthenticated = async (context) => {
 */
 export const extendExpiration = (duration) => async (context) => {
    const now = new Date()
+   if (context.caller !== 'client') return
+   if (!context.socket?.data) throw new EXError('not-authenticated', 'no data in socket')
    context.socket.data.expiresAt = new Date(now.getTime() + duration)
 }
