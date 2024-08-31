@@ -358,11 +358,13 @@ export const isNotExpired = async (context) => {
             context.socket.leave(room)
          }
          // send an event to the client (typical client handling: logout)
-         context.socket.emit('expired')
+         context.socket.emit('not-authenticated')
          // throw exception
          throw new EXError('not-authenticated', "Session expired")
       }
    } else {
+      // send an event to the client (typical client handling: logout)
+      context.socket.emit('not-authenticated')
       throw new EXError('not-authenticated', "No expiresAt in socket.data")
    }
 }
@@ -373,8 +375,16 @@ export const isNotExpired = async (context) => {
 export const isAuthenticated = async (context) => {
    // do nothing if it's not a client call from a ws connexion
    if (context.caller !== 'client') return
-   if (!context.socket?.data) throw new EXError('not-authenticated', 'no data in socket')
-   if (!context.socket.data?.user) throw new EXError('not-authenticated', 'no user in socket.data')
+   if (!context.socket?.data) {
+      // send an event to the client (typical client handling: logout)
+      context.socket.emit('not-authenticated')
+      throw new EXError('not-authenticated', 'no data in socket')
+   }
+   if (!context.socket.data?.user) {
+      // send an event to the client (typical client handling: logout)
+      context.socket.emit('not-authenticated')
+      throw new EXError('not-authenticated', 'no user in socket.data')
+   }
 }
 
 /*
@@ -383,6 +393,10 @@ export const isAuthenticated = async (context) => {
 export const extendExpiration = (duration) => async (context) => {
    const now = new Date()
    if (context.caller !== 'client') return
-   if (!context.socket?.data) throw new EXError('not-authenticated', 'no data in socket')
+   if (!context.socket?.data) {
+      // send an event to the client (typical client handling: logout)
+      context.socket.emit('not-authenticated')
+      throw new EXError('not-authenticated', 'no data in socket')
+   }
    context.socket.data.expiresAt = new Date(now.getTime() + duration)
 }
