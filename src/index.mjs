@@ -65,13 +65,13 @@ export function expressX(config) {
 
       app.log('verbose', `Client connected ${socket.id}`)
 
-      // // emit 'connection' event for app (expressjs extends EventEmitter)
-      // app.emit('connection', socket)
+      // emit 'connection' event for app (expressjs extends EventEmitter)
+      app.emit('connection', socket)
 
       socketConnectListeners.forEach(listener => listener(socket))
 
-      // // send 'connected' event to client
-      // socket.emit('connected', socket.id)
+      // send 'connected' event to client
+      socket.emit('connected', socket.id)
 
       socket.on('disconnecting', (reason) => {
          app.log('verbose', `Client disconnecting ${socket.id}, ${reason}`)
@@ -207,9 +207,9 @@ export function expressX(config) {
             if (service.publishFunction) {
                // collect channel names to socket is member of
                const channelNames = await service.publishFunction(context)
-               app.log('verbose', `publish channels ${name} ${methodName} ${channelNames}`)
                // send event on all these channels
                if (channelNames.length > 0) {
+                  app.log('verbose', `publish channels ${name} ${methodName} ${channelNames}`)
                   let sender = io.to(channelNames[0])
                   for (let i = 1; i < channelNames.length; i++) {
                      sender = sender.to(channelNames[i])
