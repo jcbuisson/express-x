@@ -329,14 +329,16 @@ export const hashPassword = (passwordField) => async (context) => {
 */
 export function protect(field) {
    return async (context) => {
-      if (Array.isArray(context.result)) {
-         for (const value of context.result) {
-            delete value[field]
+      if (context.result) {
+         if (Array.isArray(context.result)) {
+            for (const value of context.result) {
+               delete value[field]
+            }
+         } else if (typeof context.result === "object") {
+            delete context.result[field]
          }
-      } else {
-         delete context.result[field]
       }
-      return (context)
+      return context
    }
 }
 
