@@ -1,6 +1,7 @@
 
 Full doc: [https://expressx.jcbuisson.dev](https://expressx.jcbuisson.dev)
 
+
 # Getting started
 
 ExpressX is a framework handling both backend and frontend and their communication using websockets.\
@@ -66,10 +67,11 @@ npm install @jcbuisson/express-x-client socket.io-client
 
 index.html
 
-```js
+```html
 <html>
-   <button id="compute-id" class="btn">Compute</button>
    <input id="value-id" type="number" placeholder="Enter value"><br>
+   <button id="square-id" class="btn">Square</button>
+   <button id="cube-id" class="btn">Cube</button>
    <p id="result-id"></p>
 </html>
 
@@ -83,12 +85,18 @@ const socket = io('http://localhost:8000', {
 
 const app = expressXClient(socket);
 
-const computeBtn = document.getElementById('compute-id');
 const valueInput = document.getElementById('value-id');
+const squareBtn = document.getElementById('square-id');
+const cubeBtn = document.getElementById('cube-id');
 const resultParagraph = document.getElementById('result-id');
 
-computeBtn.addEventListener('click', async (ev) => {
+squareBtn.addEventListener('click', async (ev) => {
    const result = await app.service('math').square(valueInput.value);
+   resultParagraph.innerHTML = result;
+})
+
+cubeBtn.addEventListener('click', async (ev) => {
+   const result = await app.service('math').cube(valueInput.value);
    resultParagraph.innerHTML = result;
 })
 </script>
@@ -136,31 +144,6 @@ const user = await app.service('user').findUnique({ where: { id: userId }})
 By default, errors on the server-side are serialized and re-emitted on the client-side, so you can catch them if needed.
 
 
-## Run a NodeJS client script
-
-Of course the client-side ExpressX library can be used in a NodeJS script:
-
-```js
-// client.js
-import io from 'socket.io-client'
-import expressXClient from '@jcbuisson/express-x-client'
-
-const socket = io('http://localhost:8000')
-
-const app = expressXClient(socket)
-
-async function main() {
-   const result = await app.service('math').cube(3);
-   const joe = await app.service('user').create({
-      data: {
-         name: "Joe"
-      }
-   })
-   process.exit(0)
-}
-main()
-```
-
 
 ## Real-time applications
 
@@ -174,6 +157,8 @@ For example in a medical application, whenever a patients's record is modified, 
 ***Channels*** are used for this pub/sub mechanism. Service methods ***publish*** events on ***channels***, and clients ***subscribe***
 to channels in order to receive those events. ExpressX provides functions to configure which events are published to which channels.
 A channel is represented by a name and you can create and use as many channels as you need.
+
+### Example: shared bilboard
 
 In the following example of a shared bilboard, every time a client connects to the server, it joins (= is subscribed to) the 'all' channel.
 And whenever an event is emited by the `bilboard` service, this event is published on this channel,
@@ -213,7 +198,7 @@ app.on('connection', (socket) => {
 app.httpServer.listen(8000, () => console.log(`App listening at http://localhost:8000`));
 ```
 
-```js
+```html
 <!-- index.html; run it with: npx vite -->
 <html>
    <input id="message-id" type="text" placeholder="Enter message"><br>
@@ -250,7 +235,7 @@ The listener is triggered whenever the client receives from the server a `sendMe
 This event is sent to all subscribers after the execution of `app.service('bilboard').sendMessage()` on the server.
 
 
-### CRUD example
+### Example : CRUD database
 
 In this other example, every time a client connects to the server, it joins (= is subscribed to) the 'anonymous' channel.
 And whenever an event is emited by the `post` or `user` service, this event is published on this channel,
