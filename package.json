@@ -6,7 +6,7 @@
   "main": "src/index.mjs",
   "repository": {
     "type": "git",
-    "url": "git@github.com:jcbuisson/express-x.git"
+    "url": "git+ssh://git@github.com/jcbuisson/express-x.git"
   },
   "author": "Jean-Christophe Buisson <buisson@enseeiht.fr> (jcbuisson.dev)",
   "license": "MIT",
