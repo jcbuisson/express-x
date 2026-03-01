@@ -1,9 +1,9 @@
 {
   "name": "@jcbuisson/express-x",
-  "version": "3.0.0",
+  "version": "3.0.2",
   "description": "",
   "type": "module",
-  "main": "src/index.mjs",
+  "main": "src/server.mjs",
   "repository": {
     "type": "git",
     "url": "git+ssh://git@github.com/jcbuisson/express-x.git"
