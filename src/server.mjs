@@ -48,6 +48,64 @@ export class Mutex {
    }
 }
 
+//////////////////////////       SYNC ALGORITHM (common to all offline plugins)       //////////////////////////
+
+export function computeSyncResult(databaseValuesDict, clientMetadataDict, databaseMetadataDict) {
+   const onlyDatabaseIds = new Set()
+   const onlyClientIds = new Set()
+   const databaseAndClientIds = new Set()
+
+   for (const uid in databaseValuesDict) {
+      if (uid in clientMetadataDict) databaseAndClientIds.add(uid)
+      else onlyDatabaseIds.add(uid)
+   }
+   for (const uid in clientMetadataDict) {
+      if (uid in databaseValuesDict) databaseAndClientIds.add(uid)
+      else onlyClientIds.add(uid)
+   }
+
+   const addDatabase = [], updateDatabase = [], deleteDatabase = []
+   const addClient = [], updateClient = [], deleteClient = []
+
+   for (const uid of onlyDatabaseIds) {
+      const databaseMetaData = databaseMetadataDict[uid] || { uid, created_at: null }
+      addClient.push([databaseValuesDict[uid], databaseMetaData])
+   }
+
+   for (const uid of onlyClientIds) {
+      const clientMetaData = clientMetadataDict[uid]
+      if (clientMetaData.deleted_at) {
+         deleteClient.push([uid, clientMetaData.deleted_at])
+      } else {
+         addDatabase.push(clientMetaData)
+      }
+   }
+
+   for (const uid of databaseAndClientIds) {
+      const clientMetaData = clientMetadataDict[uid]
+      if (clientMetaData.deleted_at) {
+         deleteDatabase.push(uid)
+         deleteClient.push([uid, clientMetaData.deleted_at])
+      } else {
+         const databaseMetaData = databaseMetadataDict[uid] || { uid, created_at: null }
+         const clientUpdatedAt = new Date(clientMetaData.updated_at || clientMetaData.created_at)
+         const databaseUpdatedAt = new Date(databaseMetaData.updated_at || databaseMetaData.created_at)
+         const diff = clientUpdatedAt - databaseUpdatedAt
+         if (diff > 0) updateDatabase.push(clientMetaData)
+         else if (diff < 0) updateClient.push([databaseValuesDict[uid], databaseMetaData])
+      }
+   }
+
+   return {
+      addClient,
+      updateClient,
+      deleteClient,
+      addDatabase,
+      updateDatabase,
+      deleteDatabase,
+   }
+}
+
 //////////////////////////       EXPRESSX       //////////////////////////
 
 export function expressX(config) {
