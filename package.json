@@ -18,7 +18,7 @@
     "#root/*": "./*"
   },
   "scripts": {
-    "test": "node --import tsx/esm --test --test-force-exit test/offline.test.mjs test/sync.test.mjs"
+    "test": "node --import tsx/esm --test --test-force-exit test/offline.test.mjs test/hang.test.mjs test/sync.test.mjs"
   },
   "keywords": [],
   "dependencies": {
