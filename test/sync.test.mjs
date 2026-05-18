@@ -1,7 +1,7 @@
 import { test, describe, mock } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { computeSyncResult } from '#root/src/drizzle-plugins.mjs'
+import { computeSyncResult } from '#root/src/server.mjs'
 
 const T0 = new Date('2026-01-01T00:00:00Z')
 const T1 = new Date('2026-01-02T00:00:00Z')
