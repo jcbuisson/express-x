@@ -23,7 +23,6 @@ const T1 = new Date('2026-01-02T00:00:00Z')
 const T2 = new Date('2026-01-03T00:00:00Z')
 
 let dbCounter = 0
-const pgliteInstances = []
 
 // ─── In-memory DB helper ──────────────────────────────────────────────────────
 // Each test gets a fresh PGlite instance with a unique model table so tests
@@ -31,7 +30,6 @@ const pgliteInstances = []
 
 async function createTestDb(modelName) {
    const pglite = new PGlite()
-   pgliteInstances.push(pglite)
    await pglite.exec(`
       CREATE TABLE metadata (
          uid TEXT PRIMARY KEY,
@@ -55,7 +53,7 @@ async function createTestDb(modelName) {
       uid: text('uid').primaryKey(),
       label: text('label').notNull(),
    })
-   return { db, metaTable, modelTable }
+   return { pglite, db, metaTable, modelTable }
 }
 
 // ─── Test context helper ──────────────────────────────────────────────────────
@@ -130,7 +128,7 @@ describe('Full offline-first client ↔ server protocol', () => {
 
    test('sync.go through socket: server records pulled into real Dexie', async () => {
       const modelName = `model${++dbCounter}`
-      const { db, metaTable, modelTable } = await createTestDb(modelName)
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
 
       await db.insert(modelTable).values({ uid: 'r1', label: 'Vacances' })
       await db.insert(metaTable).values({ uid: 'r1', created_at: T0 })
@@ -150,12 +148,13 @@ describe('Full offline-first client ↔ server protocol', () => {
          assert.equal(r1.label, 'Vacances')
       } finally {
          await cleanup()
+         pglite.close()
       }
    })
 
    test('sync.go through socket: local Dexie record pushed to server', async () => {
       const modelName = `model${++dbCounter}`
-      const { db, metaTable, modelTable } = await createTestDb(modelName)
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
 
       const { clientApp, cleanup } = await createTestContext(
          serverApp => serverApp.configure(drizzleOfflinePlugin, db, metaTable, [modelTable]),
@@ -174,12 +173,13 @@ describe('Full offline-first client ↔ server protocol', () => {
          assert.equal(rows[0].label, 'Formation')
       } finally {
          await cleanup()
+         pglite.close()
       }
    })
 
    test('record only on client, deleted → ignored on both sides', async () => {
       const modelName = `model${++dbCounter}`
-      const { db, metaTable, modelTable } = await createTestDb(modelName)
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
 
       const { clientApp, cleanup } = await createTestContext(
          serverApp => serverApp.configure(drizzleOfflinePlugin, db, metaTable, [modelTable]),
@@ -199,6 +199,7 @@ describe('Full offline-first client ↔ server protocol', () => {
          assert.ok(!d1, 'Dexie should no longer hold the deleted record')
       } finally {
          await cleanup()
+         pglite.close()
       }
    })
 
@@ -244,7 +245,7 @@ describe('Full offline-first client ↔ server protocol', () => {
 
    test('deleted record is fully removed from Dexie metadata after sync', async () => {
       const modelName = `model${++dbCounter}`
-      const { db, metaTable, modelTable } = await createTestDb(modelName)
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
 
       const { clientApp, cleanup } = await createTestContext(
          serverApp => serverApp.configure(drizzleOfflinePlugin, db, metaTable, [modelTable]),
@@ -268,12 +269,13 @@ describe('Full offline-first client ↔ server protocol', () => {
          assert.ok(!d1Meta, 'Dexie metadata should also be removed for deleted record')
       } finally {
          await cleanup()
+         pglite.close()
       }
    })
 
    test('record in both, DB newer → client cache is updated with server value', async () => {
       const modelName = `model${++dbCounter}`
-      const { db, metaTable, modelTable } = await createTestDb(modelName)
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
 
       // Server has s1 at T2 (newer than client)
       await db.insert(modelTable).values({ uid: 's1', label: 'server-v2' })
@@ -302,6 +304,7 @@ describe('Full offline-first client ↔ server protocol', () => {
          assert.equal(s1Again.label, 'server-v2', 'second sync should not overwrite client value')
       } finally {
          await cleanup()
+         pglite.close()
       }
    })
 
@@ -348,7 +351,7 @@ describe('Full offline-first client ↔ server protocol', () => {
 
    test('record in both, client newer → server is updated via socket', async () => {
       const modelName = `model${++dbCounter}`
-      const { db, metaTable, modelTable } = await createTestDb(modelName)
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
 
       await db.insert(modelTable).values({ uid: 'u1', label: 'old' })
       await db.insert(metaTable).values({ uid: 'u1', created_at: T0, updated_at: T1 })
@@ -371,12 +374,13 @@ describe('Full offline-first client ↔ server protocol', () => {
          assert.equal(clientValue.label, 'new', 'client Dexie should be unchanged')
       } finally {
          await cleanup()
+         pglite.close()
       }
    })
 
    test('record deleted on server while client was offline is re-created on reconnect', async () => {
       const modelName = `model${++dbCounter}`
-      const { db, metaTable, modelTable } = await createTestDb(modelName)
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
 
       // r1 exists on server initially
       await db.insert(modelTable).values({ uid: 'r1', label: 'original' })
@@ -409,12 +413,13 @@ describe('Full offline-first client ↔ server protocol', () => {
          assert.ok(r1, 'client Dexie should still have r1 after sync')
       } finally {
          await cleanup()
+         pglite.close()
       }
    })
 
    test('offline changes are synced after server restart', async () => {
       const modelName = `model${++dbCounter}`
-      const { db, metaTable, modelTable } = await createTestDb(modelName)
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
 
       // ─ Phase 1: start server, connect, register synchro scope ─
       const serverApp1 = expressX({})
@@ -481,6 +486,7 @@ describe('Full offline-first client ↔ server protocol', () => {
 
       socket.disconnect()
       await new Promise(resolve => serverApp2.io.close(resolve))
+      pglite.close()
    })
 
    test('updateWithMeta pub/sub handler tolerates undefined value (concurrent delete race)', async () => {
@@ -692,7 +698,7 @@ describe('Full offline-first client ↔ server protocol', () => {
       // other addClient records in the same batch.
       // Fix: use idbValues.put() (upsert) so a pre-existing uid is handled gracefully.
       const modelName = `model${++dbCounter}`
-      const { db, metaTable, modelTable } = await createTestDb(modelName)
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
 
       await db.insert(modelTable).values({ uid: 'r1', label: 'server-r1' })
       await db.insert(metaTable).values({ uid: 'r1', created_at: T0 })
@@ -731,6 +737,7 @@ describe('Full offline-first client ↔ server protocol', () => {
          assert.equal(r2.label, 'server-r2')
       } finally {
          await cleanup()
+         pglite.close()
       }
    })
 
@@ -742,7 +749,7 @@ describe('Full offline-first client ↔ server protocol', () => {
       // Fix: use null instead of new Date() so the client's version "wins" once
       // (updateDatabase), the server gets metadata, and subsequent syncs see diff=0.
       const modelName = `model${++dbCounter}`
-      const { db, metaTable, modelTable } = await createTestDb(modelName)
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
 
       // Server has s1 in model table but intentionally NO metadata row
       await db.insert(modelTable).values({ uid: 's1', label: 'server-label' })
@@ -776,6 +783,7 @@ describe('Full offline-first client ↔ server protocol', () => {
          assert.ok(s1Meta, 'server metadata must be created after the first sync (updateDatabase + upsert)')
       } finally {
          await cleanup()
+         pglite.close()
       }
    })
 
@@ -850,7 +858,7 @@ describe('Full offline-first client ↔ server protocol', () => {
       // TypeError that escapes to the outer try/catch, aborting the entire sync and
       // silently skipping every remaining addDatabase / updateDatabase entry.
       const modelName = `model${++dbCounter}`
-      const { db, metaTable, modelTable } = await createTestDb(modelName)
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
 
       const { clientApp, cleanup } = await createTestContext(
          serverApp => serverApp.configure(drizzleOfflinePlugin, db, metaTable, [modelTable]),
@@ -878,6 +886,7 @@ describe('Full offline-first client ↔ server protocol', () => {
             'a2 must be pushed to the server even though a1 has missing metadata')
       } finally {
          await cleanup()
+         pglite.close()
       }
    })
 
@@ -889,7 +898,7 @@ describe('Full offline-first client ↔ server protocol', () => {
       // That record enters clientMetadataDict, appears as addDatabase to the server,
       // and if score is NOT NULL the insert fails, rolling back the Dexie record.
       const modelName = `model${++dbCounter}`
-      const { db, metaTable, modelTable } = await createTestDb(modelName)
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
 
       const { clientApp, cleanup } = await createTestContext(
          serverApp => serverApp.configure(drizzleOfflinePlugin, db, metaTable, [modelTable]),
@@ -911,6 +920,7 @@ describe('Full offline-first client ↔ server protocol', () => {
          assert.ok( uids.includes('five-score'), 'score=5 must match { lte: 10 }')
       } finally {
          await cleanup()
+         pglite.close()
       }
    })
 
@@ -923,7 +933,7 @@ describe('Full offline-first client ↔ server protocol', () => {
       // the client includes the record in clientMetadataDict → addDatabase → if the
       // column is NOT NULL the insert fails → rollback deletes the record from Dexie.
       const modelName = `model${++dbCounter}`
-      const { db, metaTable, modelTable } = await createTestDb(modelName)
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
 
       const { clientApp, cleanup } = await createTestContext(
          serverApp => serverApp.configure(drizzleOfflinePlugin, db, metaTable, [modelTable]),
@@ -944,6 +954,7 @@ describe('Full offline-first client ↔ server protocol', () => {
          assert.ok( uids.includes('r2'), 'record with score=5 must match { gte: 1 }')
       } finally {
          await cleanup()
+         pglite.close()
       }
    })
 
@@ -957,7 +968,6 @@ describe('Full offline-first client ↔ server protocol', () => {
       // In a real browser with persistent IndexedDB the error fires on every page load.
       const modelName = `model${++dbCounter}`
       const pglite = new PGlite()
-      pgliteInstances.push(pglite)
       await pglite.exec(`
          CREATE TABLE metadata (uid TEXT PRIMARY KEY, created_at TIMESTAMP, updated_at TIMESTAMP, deleted_at TIMESTAMP);
          CREATE TABLE "${modelName}" (uid TEXT PRIMARY KEY, label TEXT NOT NULL, score INTEGER NOT NULL);
@@ -991,6 +1001,7 @@ describe('Full offline-first client ↔ server protocol', () => {
          }
       } finally {
          await cleanup()
+         pglite.close()
       }
    })
 
@@ -1003,7 +1014,6 @@ describe('Full offline-first client ↔ server protocol', () => {
       // score=15 → addClient  → added to client (wrong, outside range)
       const modelName = `model${++dbCounter}`
       const pglite = new PGlite()
-      pgliteInstances.push(pglite)
       await pglite.exec(`
          CREATE TABLE metadata (uid TEXT PRIMARY KEY, created_at TIMESTAMP, updated_at TIMESTAMP, deleted_at TIMESTAMP);
          CREATE TABLE "${modelName}" (uid TEXT PRIMARY KEY, label TEXT NOT NULL, score INTEGER NOT NULL);
@@ -1049,6 +1059,7 @@ describe('Full offline-first client ↔ server protocol', () => {
          assert.ok(!uids.includes('hi'),  'score=15 is above range and must NOT be in Dexie')
       } finally {
          await cleanup()
+         pglite.close()
       }
    })
 
@@ -1060,7 +1071,6 @@ describe('Full offline-first client ↔ server protocol', () => {
       // and returns undefined → client gets a TypeError → sync silently fails.
       const modelName = `model${++dbCounter}`
       const pglite = new PGlite()
-      pgliteInstances.push(pglite)
       await pglite.exec(`
          CREATE TABLE metadata (uid TEXT PRIMARY KEY, created_at TIMESTAMP, updated_at TIMESTAMP, deleted_at TIMESTAMP);
          CREATE TABLE "${modelName}" (uid TEXT PRIMARY KEY, label TEXT NOT NULL, score INTEGER NOT NULL);
@@ -1101,6 +1111,7 @@ describe('Full offline-first client ↔ server protocol', () => {
          assert.ok( uids.includes('hi'), 'score=7 should be pulled (≥ 5)')
       } finally {
          await cleanup()
+         pglite.close()
       }
    })
 
@@ -1159,7 +1170,7 @@ describe('Full offline-first client ↔ server protocol', () => {
       // model table → throws → addDatabase catch deletes the record from Dexie.
       // Fix: model INSERT should use ON CONFLICT DO UPDATE just like the metadata INSERT.
       const modelName = `model${++dbCounter}`
-      const { db, metaTable, modelTable } = await createTestDb(modelName)
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
 
       // Server already has r1 (createWithMeta_A already landed)
       await db.insert(modelTable).values({ uid: 'r1', label: 'original' })
@@ -1191,6 +1202,7 @@ describe('Full offline-first client ↔ server protocol', () => {
          assert.ok(r1, 'client Dexie should retain r1 after idempotent createWithMeta')
       } finally {
          await cleanup()
+         pglite.close()
       }
    })
 
@@ -1201,7 +1213,7 @@ describe('Full offline-first client ↔ server protocol', () => {
       // throws a ConstraintError (PK already taken by the orphan), aborting the
       // entire addClient transaction — the record never arrives in the client cache.
       const modelName = `model${++dbCounter}`
-      const { db, metaTable, modelTable } = await createTestDb(modelName)
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
 
       await db.insert(modelTable).values({ uid: 'r1', label: 'from-server' })
       await db.insert(metaTable).values({ uid: 'r1', created_at: T0 })
@@ -1226,6 +1238,7 @@ describe('Full offline-first client ↔ server protocol', () => {
          assert.equal(r1.label, 'from-server')
       } finally {
          await cleanup()
+         pglite.close()
       }
    })
 
@@ -1234,7 +1247,7 @@ describe('Full offline-first client ↔ server protocol', () => {
       // nor the null branch nor the object branch — so boolean where-values are silently
       // ignored and every record passes, sending wrong records into clientMetadataDict.
       const modelName = `model${++dbCounter}`
-      const { db, metaTable, modelTable } = await createTestDb(modelName)
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
 
       const { clientApp, cleanup } = await createTestContext(
          serverApp => serverApp.configure(drizzleOfflinePlugin, db, metaTable, [modelTable]),
@@ -1254,6 +1267,7 @@ describe('Full offline-first client ↔ server protocol', () => {
          assert.ok(!uids.includes('r2'), 'active=false should NOT match { active: true }')
       } finally {
          await cleanup()
+         pglite.close()
       }
    })
 
@@ -1264,7 +1278,7 @@ describe('Full offline-first client ↔ server protocol', () => {
       // with user_uid === null.  In synchronize() this causes records with a non-null
       // user_uid to appear as addDatabase, hit a PK conflict, and get deleted.
       const modelName = `model${++dbCounter}`
-      const { db, metaTable, modelTable } = await createTestDb(modelName)
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
 
       const { clientApp, cleanup } = await createTestContext(
          serverApp => serverApp.configure(drizzleOfflinePlugin, db, metaTable, [modelTable]),
@@ -1284,6 +1298,7 @@ describe('Full offline-first client ↔ server protocol', () => {
          assert.ok( uids.includes('r2'), 'record with user_uid=null should match { user_uid: null }')
       } finally {
          await cleanup()
+         pglite.close()
       }
    })
 
@@ -1294,7 +1309,7 @@ describe('Full offline-first client ↔ server protocol', () => {
       // and the sync pushes them to the server where they fail with PK conflicts,
       // then the rollback deletes them from Dexie (data loss).
       const modelName = `model${++dbCounter}`
-      const { db, metaTable, modelTable } = await createTestDb(modelName)
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
 
       const { clientApp, cleanup } = await createTestContext(
          serverApp => serverApp.configure(drizzleOfflinePlugin, db, metaTable, [modelTable]),
@@ -1317,12 +1332,13 @@ describe('Full offline-first client ↔ server protocol', () => {
          assert.ok( uids.includes('zero'), 'score=0  should match { lte: 0 }')
       } finally {
          await cleanup()
+         pglite.close()
       }
    })
 
    test('pub/sub createWithMeta event correctly updates a second client\'s Dexie', async () => {
       const modelName = `model${++dbCounter}`
-      const { db, metaTable, modelTable } = await createTestDb(modelName)
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
 
       // Server with pub/sub: every client joins 'all' and createWithMeta broadcasts there
       const serverApp = expressX({})
@@ -1367,11 +1383,8 @@ describe('Full offline-first client ↔ server protocol', () => {
          socketA.disconnect()
          socketB.disconnect()
          await new Promise(resolve => serverApp.io.close(resolve))
+         pglite.close()
       }
-   })
-
-   after(async () => {
-      for (const p of pgliteInstances) await p.close()
    })
 
 })
