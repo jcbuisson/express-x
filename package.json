@@ -1,6 +1,6 @@
 {
   "name": "@jcbuisson/express-x",
-  "version": "3.0.4",
+  "version": "3.0.5",
   "description": "",
   "type": "module",
   "main": "src/server.mjs",
@@ -18,7 +18,7 @@
     "#root/*": "./*"
   },
   "scripts": {
-    "test": "node --import tsx/esm --test --test-force-exit test/round-trip.test.mjs"
+    "test": "node --import tsx/esm --test --test-force-exit test/offline.test.mjs test/sync.test.mjs"
   },
   "keywords": [],
   "dependencies": {

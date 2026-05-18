@@ -12,98 +12,88 @@ Core concept: ExpressX is a thin wrapper around Express.js and Socket.io that pr
 **Documentation**: https://expressx.jcbuisson.dev  
 **Version**: 3.0.3 (ES modules)
 
-## Architecture
-
-### Single Entry Point
-- `/src/server.mjs` (625 lines) is the complete framework implementation. This is the only source file.
-- Exports the main `expressX()` factory function and various utilities/plugins.
-
-### Core Concepts
-
-1. **Services**: Named groups of callable methods. Created via `app.createService(name, methods)`. Each method receives a `context` object containing metadata about the call (transport, socket, service/method names, args).
-
-2. **Context Object**: Contains execution metadata:
-   - `app`, `socket`, `serviceName`, `methodName`, `args`, `result`
-   - `caller` ('client' or 'server'), `transport` ('ws')
-   - Modified by hooks before/after method execution
-
-3. **Hooks**: Pre/post-execution functions that can modify context or validate requests. Attached to services via `service.hooks()`. Support method-specific and "all methods" variants:
-   ```js
-   service.hooks({
-     before: { methodName: [hook1, hook2], all: [globalHook] },
-     after: { methodName: [hook], all: [globalHook] }
-   })
-   ```
-
-4. **Channels & Pub/Sub**: Enable real-time broadcasting:
-   - Channels are Socket.io rooms with names
-   - Services attach a `publishFunction` via `service.publish()` that determines which channels receive events after method execution
-   - Clients join/subscribe to channels via `app.joinChannel(name, socket)`
-   - Events are published as `service-event` messages containing `{name, action, result}`
-
-5. **WebSocket Protocol**: Single `client-request` event from client → `client-response` event from server, with uid-based request/response correlation. Errors are serialized and sent back to client.
-
-### Key Plugins
-
-- **reloadPlugin**: Manages connection recovery across page reloads/reconnects by caching socket data and rooms.
-- **offlinePlugin**: Implements offline-first CRUD operations with Prisma. Provides `sync.go()` service method that reconciles client cache with database using timestamps (created_at, updated_at, deleted_at).
-
-### Common Hook Patterns (Exported Utilities)
-- `addTimestamp(field)`: Adds ISO timestamp to result
-- `hashPassword(field)`: Hashes password using bcryptjs
-- `protect(field)`: Removes sensitive fields from results
-
-### Error Handling
-- `EXError(code, message)`: Custom error class with error codes. Method errors are caught, serialized, and sent to client as rejected promises.
-
 ## Development Commands
 
 ```bash
 # Install dependencies
 npm install
 
-# Prisma (optional, if using database)
-npm run generate    # Generate Prisma client
-npm run migrate     # Run Prisma migrations
+# Run integration tests (round-trip + offline sync via real sockets/PGlite/Dexie)
+npm test
 
-# No dedicated test, build, or lint scripts
-# Manual testing via client-server examples in README
+# Run unit tests for the sync algorithm only
+node --import tsx/esm --test test/sync.test.mjs
+
+# Run both test files
+node --import tsx/esm --test --test-force-exit test/round-trip.test.mjs test/sync.test.mjs
+
+# Run a single named test (partial match on test name)
+node --import tsx/esm --test --test-force-exit --test-name-pattern="service call" test/round-trip.test.mjs
 ```
 
-## Key Dependencies
-- **express** (^4.18.2): HTTP server framework
-- **socket.io** (^4.6.0): WebSocket server
-- **bcryptjs** (^2.4.3): Password hashing
-- **config** (^3.3.9): Configuration management
-- Peer: Prisma for database CRUD services (optional)
+No build step — the source is run directly as ES modules.
 
-## File Structure
-```
-express-x/
-  src/server.mjs          # Complete framework (625 lines)
-  package.json            # v3.0.3, ES module type
-  README.md               # Getting started + examples
-  .vscode/launch.json     # Debug config
-```
+## Architecture
 
-## Implementation Notes
+### Single Source File
+- `src/server.mjs` is the complete server-side framework. All exports live here.
 
-1. **Context Execution**: Service methods are wrapped with hook execution:
-   - All `before.all` hooks → method-specific `before` hooks → method execution → method-specific `after` hooks → all `after.all` hooks
-   - Hooks receive context and can throw errors (which propagate to client)
+### Related Packages (also authored here, published separately)
+- **`@jcbuisson/express-x-client`** (`node_modules/@jcbuisson/express-x-client/src/client.mts`) — client-side library: `createClient`, `offlinePlugin`, `Mutex`, `wherePredicate`. TypeScript source consumed directly via `tsx`.
+- **`@jcbuisson/express-x-drizzle`** (`node_modules/@jcbuisson/express-x-drizzle/src/drizzle-plugins.mjs`) — Drizzle ORM variant of the offline plugin. The installed version may lag behind local development; the authoritative Drizzle plugin logic for tests is wired via `serverApp.configure(drizzleOfflinePlugin, ...)`.
 
-2. **Event Publishing**: After a service method completes, `publishFunction` is called with the context. It returns an array of channel names. The result is broadcast to all sockets in those channels as a `service-event`.
+### Core Concepts
 
-3. **Connection State**: Socket.io's built-in `socket.data` object stores per-connection state. Socket.io's connection recovery feature (2-minute default) restores socket.id, rooms, and data on network reconnects.
+1. **Services**: Named groups of callable methods. Created via `app.createService(name, methods)`. Each method is wrapped to support hooks and pub/sub.
 
-4. **Offline Sync**: The `offlinePlugin` uses transaction-safe Prisma operations and a mutex to ensure consistent synchronization. Clients track operation timestamps and the sync algorithm compares created_at/updated_at to determine add/update/delete operations.
+2. **Context Object**: Passed to every hooked method — contains `app`, `socket`, `serviceName`, `methodName`, `args`, `result`, `caller` ('client'|'server'), `transport` ('ws').
 
-5. **Logging**: App-level logging via `app.log(severity, message)`. If no logger is configured, falls back to console.log.
+3. **Hooks**: Pre/post-execution filters attached via `service.hooks({ before: { methodName: [...], all: [...] }, after: {...} })`. Hooks run: `before.all` → `before.method` → method → `after.method` → `after.all`.
+
+4. **Channels & Pub/Sub**: Socket.io rooms. After a service method completes, `service.publishFunction(context)` returns channel names; the result is broadcast as `service-event` to all sockets in those rooms. Clients subscribe with `app.service(name).on(action, handler)`.
+
+5. **WebSocket Protocol**: Client emits `client-request {uid, name, action, args}` → server emits `client-response {uid, result|error}`. Requests are correlated by `uid`.
+
+### Offline Sync Architecture
+
+The sync system reconciles a client Dexie cache with a server database. The protocol:
+
+1. Client calls `sync.go(modelName, where, cutoffDate, clientMetadataDict)` with its local metadata snapshot.
+2. Server computes diff using `computeSyncResult` (exported from `server.mjs`, pure function, no I/O).
+3. Server returns `{ addClient, updateClient, deleteClient, addDatabase, updateDatabase }`.
+4. Client applies each batch: puts addClient records into Dexie, deletes deleteClient, updates updateClient, then calls `createWithMeta`/`updateWithMeta` for addDatabase/updateDatabase.
+
+**Two offline plugin implementations:**
+- `offlinePlugin` in `server.mjs` — Prisma-based (legacy, uses `prisma.$transaction`).
+- `drizzleOfflinePlugin` from `@jcbuisson/express-x-drizzle` — Drizzle ORM-based, used in all tests.
+
+**`computeSyncResult(databaseValuesDict, clientMetadataDict, databaseMetadataDict)`** is the pure sync algorithm exported from `server.mjs`. It uses `null` (not `new Date()`) as the fallback `created_at` for missing metadata, so a record without metadata is treated as older than any client record, preventing infinite `updateClient` loops.
+
+### Key Plugins
+- **reloadPlugin**: Caches socket data/rooms on disconnect; restores them on reconnect via `cnx-transfer` socket event.
+- **offlinePlugin (Prisma)**: CRUD services + `sync.go` for offline-first with Prisma.
+- **drizzleOfflinePlugin**: Same pattern using Drizzle ORM + PGlite-compatible transactions.
+
+### Exported Utilities
+- `Mutex` — simple async mutex used by sync and offline plugins.
+- `truncateString` — log truncation helper.
+- `addTimestamp(field)`, `hashPassword(field)`, `protect(field)` — common hook factories.
+- `EXError(code, message)` — custom error class; `code` is serialized and sent to the client.
+- `computeSyncResult` — pure sync diff algorithm.
+
+## Test Structure
+
+- `test/round-trip.test.mjs` — Integration tests. Spins up a real Express/Socket.io server on a random port, connects via `socket.io-client`, uses PGlite (in-memory Postgres) + Drizzle + Dexie (via `fake-indexeddb`). Tests cover the full client↔server sync protocol, pub/sub, rollbacks, and edge cases. Each test gets an isolated PGlite instance and unique model name.
+- `test/sync.test.mjs` — Unit tests for `computeSyncResult` only. Imports from `#root/src/drizzle-plugins.mjs` (the `#root/*` alias maps to the repo root via `package.json` imports).
 
 ## Configuration
 
-ExpressX accepts an optional config object (first parameter to `expressX(config)`):
-- `config.WS_PATH` (default: '/socket.io/'): Socket.io path
+`expressX(config)` accepts:
+- `config.WS_PATH` (default: `'/socket.io/'`): Socket.io path
 - `config.maxDisconnectionDuration` (default: 2 min): Connection recovery window
-- Any config is accessible server-side via `app.get('config')`
+- Accessible server-side as `app.get('config')`
 
+## Key Dependencies
+- **express** / **socket.io**: HTTP + WebSocket server
+- **bcryptjs**: Password hashing (hook utility)
+- Dev: **@electric-sql/pglite** (in-memory Postgres for tests), **drizzle-orm**, **fake-indexeddb** (Dexie in Node), **tsx** (runs `.mts` client source directly), **dexie**, **rxjs**, **uuid**, **@vueuse/core**
