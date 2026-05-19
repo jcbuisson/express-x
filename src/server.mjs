@@ -6,10 +6,6 @@ import bcrypt from 'bcryptjs'
 
 
 
-// UTILISER L'ACKNOWLEDGEMENT : https://socket.io/docs/v4/#acknowledgements
-
-
-
 
 //////////////////////////       UTILITIES       //////////////////////////
 
@@ -185,11 +181,11 @@ export function expressX(config) {
 
       /*
       * Handle websocket client request
-      * Emit in return a 'client-response' message
+      * Respond via socket.io acknowledgment callback
       */
-      socket.on('client-request', async ({ uid, name, action, args }) => {
+      socket.on('client-request', async ({ name, action, args }, ack) => {
          const trimmedArgs = args ? JSON.stringify(args).slice(0, 300) : ''
-         app.log('verbose', `client-request ${uid} ${name} ${action} ${trimmedArgs}`)
+         app.log('verbose', `client-request ${name} ${action} ${trimmedArgs}`)
          if (name in services) {
             const service = services[name]
             try {
@@ -200,30 +196,21 @@ export function expressX(config) {
                      caller: 'client',
                      transport: 'ws',
                      socket,
-                     // connectionId,
                      serviceName: name,
                      methodName: action,
                      args,
                   }
 
                   try {
-                     // call method with context
-                     if (name === 'highlighted_part') {
-                        console.log('')
-                     }
                      const result = await serviceMethod(context, ...args)
 
                      const trimmedResult = result ? JSON.stringify(result).slice(0, 300) : ''
-                     app.log('verbose', `client-response ${uid} ${trimmedResult}`)
-                     socket.emit('client-response', {
-                        uid,
-                        result,
-                     })
+                     app.log('verbose', `client-response ${trimmedResult}`)
+                     ack({ result })
                   } catch(err) {
                      console.log('!!!!!!error', 'name', name, 'action', action, 'args', args, 'err.code', err.code, 'err.message', err.message)
                      app.log('verbose', err.stack)
-                     socket.emit('client-response', {
-                        uid,
+                     ack({
                         error: {
                            code: err.code || 'unknown-error',
                            message: err.message,
@@ -232,8 +219,7 @@ export function expressX(config) {
                      })
                   }
                } else {
-                  socket.emit('client-response', {
-                     uid,
+                  ack({
                      error: {
                         code: 'missing-method',
                         message: `there is no method named '${action}' for service '${name}'`,
@@ -243,18 +229,16 @@ export function expressX(config) {
             } catch(err) {
                console.log('err', err)
                app.log('verbose', err.stack)
-               socket.emit('client-response', {
-                  uid,
+               ack({
                   error: {
                      code: err.code || 'unknown-error',
                      message: err.message,
                      stack: err.stack,
-            }
+                  }
                })
             }
          } else {
-            socket.emit('client-response', {
-               uid,
+            ack({
                error: {
                   code: 'missing-service',
                   message: `there is no service named '${name}'`,

@@ -4,9 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**express-x** is a full-stack framework that unifies backend and frontend communication through WebSocket-based services. It's published as `@jcbuisson/express-x` on npm.
+**express-x** is a full-stack framework that unifies backend and frontend communication through WebSocket-based services.
+It's published as `@jcbuisson/express-x` on npm.
 
-Core concept: ExpressX is a thin wrapper around Express.js and Socket.io that provides a service-oriented, real-time RPC pattern. Clients call server-side service methods via WebSocket and receive results as promises. Services can publish events to channels, enabling pub/sub-style real-time updates.
+Core concept: ExpressX is a thin wrapper around Express.js and Socket.io that provides a service-oriented, real-time RPC pattern.
+Clients call server-side service methods via WebSocket and receive results as promises.
+Services can publish events to channels, enabling pub/sub-style real-time updates.
 
 **Repository**: https://github.com/jcbuisson/express-x  
 **Documentation**: https://expressx.jcbuisson.dev  
