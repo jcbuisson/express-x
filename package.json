@@ -1,6 +1,6 @@
 {
   "name": "@jcbuisson/express-x",
-  "version": "3.1.1",
+  "version": "3.1.2",
   "description": "",
   "type": "module",
   "main": "src/server.mjs",
@@ -30,7 +30,7 @@
   "devDependencies": {
     "@electric-sql/pglite": "^0.4.5",
     "@jcbuisson/express-x-client": "^3.0.5",
-    "@jcbuisson/express-x-drizzle": "^1.0.7",
+    "@jcbuisson/express-x-drizzle": "^1.0.8",
     "@vueuse/core": "^14.3.0",
     "dexie": "^4.4.2",
     "drizzle-orm": "^0.45.2",
