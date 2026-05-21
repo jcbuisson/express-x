@@ -134,7 +134,7 @@ export function expressX(config) {
       path: config?.WS_PATH || '/socket.io/',
       connectionStateRecovery: {
          // the backup duration of the sessions and the packets
-         maxDisconnectionDuration: 2 * 60 * 1000,
+         maxDisconnectionDuration: config?.maxDisconnectionDuration ?? 2 * 60 * 1000,
          // whether to skip middlewares upon successful recovery
          skipMiddlewares: true,
       }
@@ -346,7 +346,7 @@ export function expressX(config) {
    function service(name) {
       // get service from `services` cache
       if (name in services) return services[name]
-      app.log('error', `there is no service named '${name}'`, 'missing-service')
+      throw new EXError('missing-service', `there is no service named '${name}'`)
    }
 
    function joinChannel(channelName, socket) {
@@ -402,8 +402,12 @@ export const addTimestamp = (field) => async (context) => {
  * Hash password of the property `field`
 */
 export const hashPassword = (passwordField) => async (context) => {
-   const user = context.result
-   user[passwordField] = await bcrypt.hash(user[passwordField], 5)
+   for (const arg of (context.args || [])) {
+      if (arg && typeof arg === 'object' && !Array.isArray(arg) && passwordField in arg) {
+         arg[passwordField] = await bcrypt.hash(arg[passwordField], 5)
+         return
+      }
+   }
 }
 
 /*
