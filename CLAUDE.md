@@ -13,7 +13,7 @@ Services can publish events to channels, enabling pub/sub-style real-time update
 
 **Repository**: https://github.com/jcbuisson/express-x  
 **Documentation**: https://expressx.jcbuisson.dev  
-**Version**: 3.0.3 (ES modules)
+**Version**: 3.1.0 (ES modules)
 
 ## Development Commands
 
@@ -28,22 +28,22 @@ npm test
 node --import tsx/esm --test test/sync.test.mjs
 
 # Run both test files
-node --import tsx/esm --test --test-force-exit test/round-trip.test.mjs test/sync.test.mjs
+node --import tsx/esm --test --test-force-exit test/offline.test.mjs test/sync.test.mjs
 
 # Run a single named test (partial match on test name)
-node --import tsx/esm --test --test-force-exit --test-name-pattern="service call" test/round-trip.test.mjs
+node --import tsx/esm --test --test-force-exit --test-name-pattern="service call" test/offline.test.mjs
 ```
 
 No build step — the source is run directly as ES modules.
 
 ## Architecture
 
-### Single Source File
-- `src/server.mjs` is the complete server-side framework. All exports live here.
+### Source Files
+- `src/server.mjs` — complete server-side framework; all exports live here.
 
 ### Related Packages (also authored here, published separately)
-- **`@jcbuisson/express-x-client`** (`node_modules/@jcbuisson/express-x-client/src/client.mts`) — client-side library: `createClient`, `offlinePlugin`, `Mutex`, `wherePredicate`. TypeScript source consumed directly via `tsx`.
-- **`@jcbuisson/express-x-drizzle`** (`node_modules/@jcbuisson/express-x-drizzle/src/drizzle-plugins.mjs`) — Drizzle ORM variant of the offline plugin. The installed version may lag behind local development; the authoritative Drizzle plugin logic for tests is wired via `serverApp.configure(drizzleOfflinePlugin, ...)`.
+- **`@jcbuisson/express-x-client`** (`node_modules/@jcbuisson/express-x-client/src/client.mts`) — published client library: `createClient`, `offlinePlugin`, `Mutex`, `wherePredicate`.
+- **`@jcbuisson/express-x-drizzle`** (`node_modules/@jcbuisson/express-x-drizzle/src/drizzle-plugins.mjs`) — Drizzle ORM offline plugin. The installed version may lag behind local development; tests wire it via `serverApp.configure(drizzleOfflinePlugin, ...)`.
 
 ### Core Concepts
 
@@ -55,7 +55,7 @@ No build step — the source is run directly as ES modules.
 
 4. **Channels & Pub/Sub**: Socket.io rooms. After a service method completes, `service.publishFunction(context)` returns channel names; the result is broadcast as `service-event` to all sockets in those rooms. Clients subscribe with `app.service(name).on(action, handler)`.
 
-5. **WebSocket Protocol**: Client emits `client-request {uid, name, action, args}` → server emits `client-response {uid, result|error}`. Requests are correlated by `uid`.
+5. **WebSocket Protocol**: Client calls `socket.timeout(ms).emitWithAck('client-request', { name, action, args })` → server handler receives `({ name, action, args }, ack)` and responds via `ack({ result })` or `ack({ error })`. Correlation is handled by Socket.io's built-in acknowledgment mechanism.
 
 ### Offline Sync Architecture
 
@@ -86,8 +86,10 @@ The sync system reconciles a client Dexie cache with a server database. The prot
 
 ## Test Structure
 
-- `test/round-trip.test.mjs` — Integration tests. Spins up a real Express/Socket.io server on a random port, connects via `socket.io-client`, uses PGlite (in-memory Postgres) + Drizzle + Dexie (via `fake-indexeddb`). Tests cover the full client↔server sync protocol, pub/sub, rollbacks, and edge cases. Each test gets an isolated PGlite instance and unique model name.
+- `test/offline.test.mjs` — Integration tests. Spins up a real Express/Socket.io server on a random port, connects via `socket.io-client`, uses PGlite (in-memory Postgres) + Drizzle + Dexie (via `fake-indexeddb`). Tests cover the full client↔server sync protocol, pub/sub, rollbacks, and edge cases. Each test gets an isolated PGlite instance and unique model name.
 - `test/sync.test.mjs` — Unit tests for `computeSyncResult` only. Imports from `#root/src/drizzle-plugins.mjs` (the `#root/*` alias maps to the repo root via `package.json` imports).
+
+Each integration test uses `createTestContext(registerServices, opts)` which starts a server on a random port, connects a client, and returns a `cleanup()` function. Tests import from the published npm packages (`@jcbuisson/express-x`, `@jcbuisson/express-x-client`, `@jcbuisson/express-x-drizzle`), not from local `src/`.
 
 ## Configuration
 
