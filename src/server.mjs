@@ -275,8 +275,8 @@ export function expressX(config) {
                await hook(context)
             }
 
-            // call method
-            const result = await method(...args)
+            // call method — use context.args so before-hooks can modify arguments
+            const result = await method(...context.args)
             // put result into context
             context.result = result
 
@@ -292,7 +292,7 @@ export function expressX(config) {
                // collect channel names to socket is member of
                const channelNames = await service.publishFunction(context)
                // send event on all these channels
-               if (channelNames.length > 0) {
+               if (Array.isArray(channelNames) && channelNames.length > 0) {
                   app.log('verbose', `publish channels ${name} ${methodName} ${channelNames}`)
                   let sender = io.to(channelNames[0])
                   for (let i = 1; i < channelNames.length; i++) {
@@ -395,7 +395,7 @@ export class EXError extends Error {
  * Add a timestamp property of name `field` with current time as value
 */
 export const addTimestamp = (field) => async (context) => {
-   context.result[field] = (new Date()).toISOString()
+   if (context.result != null) context.result[field] = (new Date()).toISOString()
 }
 
 /*
@@ -442,10 +442,10 @@ export async function reloadPlugin(app) {
       const alreadySavedData = dataCache[socket.id]
       const alreadySavedRooms = roomCache[socket.id]
 
-      dataCache[socket.id] = Object.assign({}, socket.data)
+      // Current socket.data takes precedence over stale cached data so that any
+      // updates made between disconnections are not overwritten.
+      dataCache[socket.id] = Object.assign({}, alreadySavedData, socket.data)
       roomCache[socket.id] = new Set(socket.rooms)
-
-      if (alreadySavedData) dataCache[socket.id] = Object.assign(dataCache[socket.id], alreadySavedData)
       if (alreadySavedRooms) for (const room of alreadySavedRooms) roomCache[socket.id].add(room)
    })
 
@@ -455,6 +455,11 @@ export async function reloadPlugin(app) {
       // when client ask for transfer from fromSocketId to toSocketId
       socket.on('cnx-transfer', async (fromSocketId, toSocketId) => {
          app.log('verbose', `cnx-transfer from ${fromSocketId} to ${toSocketId}`)
+         // A socket may only claim its own ID as the destination — prevent session hijacking
+         if (toSocketId !== socket.id) {
+            app.log('verbose', `cnx-transfer rejected: toSocketId ${toSocketId} !== socket.id ${socket.id}`)
+            return
+         }
          console.log('dataCache', dataCache)
          console.log('roomCache', roomCache)
          // copy connection room & data from 'fromSocketId' to 'toSocketId'
