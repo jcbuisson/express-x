@@ -8,6 +8,7 @@ process.on('unhandledRejection', (reason, promise) => {
 import { test, describe, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { io as ioc } from 'socket.io-client'
+import { firstValueFrom } from 'rxjs'
 import { PGlite } from '@electric-sql/pglite'
 import { drizzle } from 'drizzle-orm/pglite'
 import { pgTable, text, timestamp, integer } from 'drizzle-orm/pg-core'
@@ -1286,6 +1287,88 @@ describe('Full offline-first client ↔ server protocol', () => {
          await Promise.all([broadSync, narrowSync])
          assert.equal(narrowFindManyEntered, true, 'narrow sync should run after broad sync releases')
       } finally {
+         pglite.close()
+      }
+   })
+
+   test('getObservable syncs persisted where scopes on a new client session', async () => {
+      // If whereList was left in IndexedDB by a previous run, addSynchroDBWhere()
+      // returns false. getObservable() must still sync once for this app session;
+      // otherwise the first emission can be stale forever until a manual sync/reconnect.
+      const modelName = `model${++dbCounter}`
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
+
+      await db.insert(modelTable).values({ uid: 'r1', label: 'from-server' })
+      await db.insert(metaTable).values({ uid: 'r1', created_at: T0 })
+
+      const { clientApp, cleanup } = await createTestContext(
+         serverApp => serverApp.configure(drizzleOfflinePlugin, db, metaTable, [modelTable]),
+         { useOfflinePlugin: true },
+      )
+
+      try {
+         const model = clientApp.createOfflineModel(modelName, ['label'])
+         await model.db.whereList.add({ sortedjson: '{}' })
+
+         const rows = await firstValueFrom(model.getObservable({}))
+
+         assert.deepEqual(rows.map(row => row.uid), ['r1'])
+      } finally {
+         await cleanup()
+         pglite.close()
+      }
+   })
+
+   test('initial connect syncs scopes registered while the client started offline', async () => {
+      const modelName = `model${++dbCounter}`
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
+
+      await db.insert(modelTable).values({ uid: 'r1', label: 'from-server' })
+      await db.insert(metaTable).values({ uid: 'r1', created_at: T0 })
+
+      const serverApp = expressX({})
+      serverApp.configure(drizzleOfflinePlugin, db, metaTable, [modelTable])
+      await new Promise(resolve => serverApp.httpServer.listen(0, resolve))
+      const port = serverApp.httpServer.address().port
+
+      const socket = ioc(`http://localhost:${port}`, {
+         transports: ['websocket'],
+         autoConnect: false,
+      })
+      const clientApp = createClient(socket, { debug: false })
+      offlinePlugin(clientApp)
+      const model = clientApp.createOfflineModel(modelName, ['label'])
+      let subscription
+
+      try {
+         await model.db.whereList.add({ sortedjson: '{}' })
+
+         const observedServerRow = new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => reject(new Error('timed out waiting for synced row')), 1000)
+            subscription = model.getObservable({}).subscribe({
+               next: rows => {
+                  if (rows.some(row => row.uid === 'r1')) {
+                     clearTimeout(timeout)
+                     subscription.unsubscribe()
+                     resolve(rows)
+                  }
+               },
+               error: reject,
+            })
+         })
+
+         socket.connect()
+         await new Promise((resolve, reject) => {
+            socket.on('connect', resolve)
+            socket.on('connect_error', reject)
+         })
+
+         const rows = await observedServerRow
+         assert.deepEqual(rows.map(row => row.uid), ['r1'])
+      } finally {
+         if (subscription) subscription.unsubscribe()
+         socket.disconnect()
+         await new Promise(resolve => serverApp.io.close(resolve))
          pglite.close()
       }
    })
