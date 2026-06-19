@@ -1373,6 +1373,68 @@ describe('Full offline-first client ↔ server protocol', () => {
       }
    })
 
+   test('scoped reconnect sync preserves dirty records that moved out of scope', async () => {
+      const modelName = `model${++dbCounter}`
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
+
+      await db.insert(modelTable).values({ uid: 'r1', label: 'open' })
+      await db.insert(metaTable).values({ uid: 'r1', created_at: T0 })
+
+      const serverApp = expressX({})
+      serverApp.configure(drizzleOfflinePlugin, db, metaTable, [modelTable])
+      await new Promise(resolve => serverApp.httpServer.listen(0, resolve))
+      const port = serverApp.httpServer.address().port
+
+      const socket = ioc(`http://localhost:${port}`, {
+         transports: ['websocket'],
+         autoConnect: false,
+      })
+      const clientApp = createClient(socket, { debug: false })
+      offlinePlugin(clientApp)
+      const model = clientApp.createOfflineModel(modelName, ['label'])
+
+      try {
+         socket.connect()
+         await new Promise((resolve, reject) => {
+            socket.on('connect', resolve)
+            socket.on('connect_error', reject)
+         })
+
+         await model.addSynchroWhere({ label: 'open' })
+         await model.synchronizeAll()
+         assert.equal((await model.db.values.get('r1')).label, 'open')
+
+         socket.disconnect()
+         for (let i = 0; i < 50 && clientApp.isConnected; i++) {
+            await new Promise(resolve => setTimeout(resolve, 10))
+         }
+         assert.equal(clientApp.isConnected, false)
+
+         await model.update('r1', { label: 'closed' })
+         assert.equal((await model.db.values.get('r1')).label, 'closed')
+
+         socket.connect()
+         await new Promise((resolve, reject) => {
+            socket.on('connect', resolve)
+            socket.on('connect_error', reject)
+         })
+
+         let serverRows = []
+         for (let i = 0; i < 50; i++) {
+            serverRows = await db.select().from(modelTable).where(eq(modelTable.uid, 'r1'))
+            if (serverRows[0]?.label === 'closed') break
+            await new Promise(resolve => setTimeout(resolve, 10))
+         }
+
+         assert.equal(serverRows[0]?.label, 'closed', 'dirty out-of-scope client update must be pushed to the server')
+         assert.equal((await model.db.values.get('r1')).label, 'closed', 'client value must not be overwritten by stale scoped server data')
+      } finally {
+         socket.disconnect()
+         await new Promise(resolve => serverApp.io.close(resolve))
+         pglite.close()
+      }
+   })
+
    test('update() rollback clears stale updated_at from metadata', async () => {
       // Optimistic update sets updated_at = now in metadata before the server responds.
       // On rejection the rollback does db.metadata.update(uid, previousMetadata), but
