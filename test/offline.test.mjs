@@ -308,6 +308,41 @@ describe('Full offline-first client ↔ server protocol', () => {
       }
    })
 
+   test('record in both, DB created_at newer → client metadata is fully replaced', async () => {
+      const modelName = `model${++dbCounter}`
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
+
+      // Server is newer by created_at only; updated_at is null.
+      await db.insert(modelTable).values({ uid: 's1', label: 'server-created-later' })
+      await db.insert(metaTable).values({ uid: 's1', created_at: T2 })
+
+      const { clientApp, cleanup } = await createTestContext(
+         serverApp => serverApp.configure(drizzleOfflinePlugin, db, metaTable, [modelTable]),
+         { useOfflinePlugin: true },
+      )
+
+      try {
+         const model = clientApp.createOfflineModel(modelName, ['label'])
+         await model.db.values.add({ uid: 's1', label: 'client-created-earlier' })
+         await model.db.metadata.add({ uid: 's1', created_at: T1 })
+         await model.addSynchroWhere({})
+
+         await model.synchronizeAll()
+
+         const s1 = await model.db.values.get('s1')
+         const meta = await model.db.metadata.get('s1')
+         assert.equal(s1.label, 'server-created-later')
+         assert.equal(new Date(meta.created_at).getTime(), T2.getTime())
+
+         await model.synchronizeAll()
+         const s1Again = await model.db.values.get('s1')
+         assert.equal(s1Again.label, 'server-created-later')
+      } finally {
+         await cleanup()
+         pglite.close()
+      }
+   })
+
    test('one failed updateWithMeta does not abort remaining updateDatabase entries', async () => {
       const modelName = `model${++dbCounter}`
       const serverUpdated = {}
@@ -487,6 +522,102 @@ describe('Full offline-first client ↔ server protocol', () => {
       socket.disconnect()
       await new Promise(resolve => serverApp2.io.close(resolve))
       pglite.close()
+   })
+
+   test('reconnect keeps disconnectedDate until automatic sync completes', async () => {
+      const modelName = `model${++dbCounter}`
+      const serverRows = []
+      let resolveSyncStarted
+      let releaseSync
+      let resolveCreate
+      const syncStarted = new Promise(resolve => { resolveSyncStarted = resolve })
+      const syncRelease = new Promise(resolve => { releaseSync = resolve })
+      const createDone = new Promise(resolve => { resolveCreate = resolve })
+
+      function registerServices(app, { slowSync = false } = {}) {
+         app.createService(modelName, {
+            createWithMeta: async (uid, data, created_at) => {
+               serverRows.push({ uid, ...data })
+               resolveCreate()
+               return [{ uid, ...data }, { uid, created_at, updated_at: null, deleted_at: null }]
+            },
+            updateWithMeta: async () => {},
+            deleteWithMeta: async () => {},
+            findMany: async () => [],
+         })
+         app.createService('sync', {
+            go: async (_modelName, _where, _cutoffDate, clientMetadataDict) => {
+               if (slowSync) {
+                  resolveSyncStarted()
+                  await syncRelease
+               }
+               return {
+                  addClient: [],
+                  updateClient: [],
+                  deleteClient: [],
+                  addDatabase: Object.values(clientMetadataDict),
+                  updateDatabase: [],
+               }
+            },
+         })
+      }
+
+      const serverApp1 = expressX({})
+      registerServices(serverApp1)
+      await new Promise(resolve => serverApp1.httpServer.listen(0, resolve))
+      const port = serverApp1.httpServer.address().port
+
+      const socket = ioc(`http://localhost:${port}`, {
+         transports: ['websocket'],
+         autoConnect: false,
+      })
+      const clientApp = createClient(socket, { debug: false })
+      offlinePlugin(clientApp)
+      socket.connect()
+      await new Promise((resolve, reject) => {
+         socket.on('connect', resolve)
+         socket.on('connect_error', reject)
+      })
+
+      const model = clientApp.createOfflineModel(modelName, ['label'])
+      await model.addSynchroWhere({})
+      await model.synchronizeAll()
+
+      const disconnected = new Promise(resolve => socket.once('disconnect', resolve))
+      serverApp1.io.disconnectSockets(true)
+      await new Promise(resolve => serverApp1.io.close(resolve))
+      await disconnected
+
+      await model.db.values.add({ uid: 'reconnect-1', label: 'from reconnect' })
+      await model.db.metadata.add({ uid: 'reconnect-1', created_at: T1 })
+
+      const serverApp2 = expressX({})
+      registerServices(serverApp2, { slowSync: true })
+      await new Promise(resolve => serverApp2.httpServer.listen(port, resolve))
+
+      const reconnected = new Promise((resolve, reject) => {
+         const timer = setTimeout(() => reject(new Error('reconnect timeout')), 5000)
+         socket.once('connect', () => { clearTimeout(timer); resolve() })
+      })
+      socket.connect()
+      await reconnected
+      await syncStarted
+
+      assert.ok(clientApp.disconnectedDate, 'disconnect cutoff should remain while reconnect sync is running')
+      assert.equal(serverRows.length, 0, 'offline row should not be pushed before sync is released')
+
+      releaseSync()
+      await createDone
+
+      for (let i = 0; i < 50 && clientApp.disconnectedDate; i++) {
+         await new Promise(resolve => setTimeout(resolve, 10))
+      }
+
+      assert.equal(clientApp.disconnectedDate, null, 'disconnect cutoff should clear after reconnect sync completes')
+      assert.deepEqual(serverRows, [{ uid: 'reconnect-1', label: 'from reconnect' }])
+
+      socket.disconnect()
+      await new Promise(resolve => serverApp2.io.close(resolve))
    })
 
    test('updateWithMeta pub/sub handler tolerates undefined value (concurrent delete race)', async () => {

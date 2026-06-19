@@ -29,7 +29,7 @@
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.4.5",
-    "@jcbuisson/express-x-client": "^3.1.6",
+    "@jcbuisson/express-x-client": "^3.1.11",
     "@jcbuisson/express-x-drizzle": "^3.1.6",
     "@vueuse/core": "^14.3.0",
     "dexie": "^4.4.2",
