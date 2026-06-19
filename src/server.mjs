@@ -46,6 +46,17 @@ export class Mutex {
 
 //////////////////////////       SYNC ALGORITHM (common to all offline plugins)       //////////////////////////
 
+// This sync algorithm uses the metadata table as its only source of truth for existence and recency. Manual SQL changes
+// create a split reality — the data table and the metadata table diverge — and the algorithm's set-intersection logic
+// misidentifies the divergence as intentional client-side changes that must be propagated.
+// If you need to seed or manipulate data outside the framework, you must also write the corresponding rows into the
+// metadata table with valid created_at/updated_at/deleted_at values.
+
+// The metadata table is a tombstone log that grows monotonically. Every record ever created leaves a permanent entry. For
+// long-lived applications with high churn this is worth planning for: you can only safely purge a tombstone once you're certain no
+// client still holds a copy of that record (i.e., every client has synced at least once after the deletion). There's currently no
+// pruning mechanism in the framework.
+
 export function computeSyncResult(databaseValuesDict, clientMetadataDict, databaseMetadataDict) {
    const onlyDatabaseIds = new Set()
    const onlyClientIds = new Set()
@@ -79,11 +90,18 @@ export function computeSyncResult(databaseValuesDict, clientMetadataDict, databa
 
    for (const uid of databaseAndClientIds) {
       const clientMetaData = clientMetadataDict[uid]
+      const databaseMetaData = databaseMetadataDict[uid] || { uid, created_at: null }
       if (clientMetaData.deleted_at) {
-         deleteDatabase.push(uid)
-         deleteClient.push([uid, clientMetaData.deleted_at])
+         const clientDeletedAt = new Date(clientMetaData.deleted_at)
+         const databaseUpdatedAt = new Date(databaseMetaData.updated_at || databaseMetaData.created_at)
+         const diff = clientDeletedAt - databaseUpdatedAt
+         if (diff >= 0) {
+            deleteDatabase.push(uid)
+            deleteClient.push([uid, clientMetaData.deleted_at])
+         } else {
+            updateClient.push([databaseValuesDict[uid], databaseMetaData])
+         }
       } else {
-         const databaseMetaData = databaseMetadataDict[uid] || { uid, created_at: null }
          const clientUpdatedAt = new Date(clientMetaData.updated_at || clientMetaData.created_at)
          const databaseUpdatedAt = new Date(databaseMetaData.updated_at || databaseMetaData.created_at)
          const diff = clientUpdatedAt - databaseUpdatedAt

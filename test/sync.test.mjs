@@ -99,6 +99,26 @@ describe('computeSyncResult', () => {
       assert.deepEqual(result.deleteClient, [['g', T1]])
    })
 
+   test('record in both, client delete newer than DB update → delete on DB and notify client', () => {
+      const value      = { uid: 'h', label: 'server-old' }
+      const dbMeta     = { uid: 'h', created_at: T0, updated_at: T1 }
+      const clientMeta = { uid: 'h', created_at: T0, deleted_at: T2 }
+      const result = computeSyncResult({ h: value }, { h: clientMeta }, { h: dbMeta })
+      assert.deepEqual(result.deleteDatabase, ['h'])
+      assert.deepEqual(result.deleteClient, [['h', T2]])
+      assert.deepEqual(result.updateClient, [])
+   })
+
+   test('record in both, DB update newer than client delete → restore client from DB', () => {
+      const value      = { uid: 'i', label: 'server-new' }
+      const dbMeta     = { uid: 'i', created_at: T0, updated_at: T2 }
+      const clientMeta = { uid: 'i', created_at: T0, deleted_at: T1 }
+      const result = computeSyncResult({ i: value }, { i: clientMeta }, { i: dbMeta })
+      assert.deepEqual(result.updateClient, [[value, dbMeta]])
+      assert.deepEqual(result.deleteDatabase, [])
+      assert.deepEqual(result.deleteClient, [])
+   })
+
    test('mixed scenario: one of each case', () => {
       const dbOnly      = { uid: 'db', label: 'db-only' }
       const dbOnlyMeta  = { uid: 'db', created_at: T0 }
