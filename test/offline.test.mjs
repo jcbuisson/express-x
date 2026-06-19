@@ -350,7 +350,7 @@ describe('Full offline-first client ↔ server protocol', () => {
       const { clientApp, cleanup } = await createTestContext(serverApp => {
          serverApp.createService('sync', {
             // Tell the client both u1 and u2 need to be pushed (client is newer for both)
-            go: async (mn, where, cutoff, clientMetadataDict) => ({
+            go: async (mn, where, clientMetadataDict) => ({
                addClient: [], updateClient: [], deleteClient: [], addDatabase: [],
                updateDatabase: [ clientMetadataDict['u1'], clientMetadataDict['u2'] ],
             }),
@@ -546,7 +546,7 @@ describe('Full offline-first client ↔ server protocol', () => {
             findMany: async () => [],
          })
          app.createService('sync', {
-            go: async (_modelName, _where, _cutoffDate, clientMetadataDict) => {
+            go: async (_modelName, _where, clientMetadataDict) => {
                if (slowSync) {
                   resolveSyncStarted()
                   await syncRelease
@@ -603,7 +603,7 @@ describe('Full offline-first client ↔ server protocol', () => {
       await reconnected
       await syncStarted
 
-      assert.ok(clientApp.disconnectedDate, 'disconnect cutoff should remain while reconnect sync is running')
+      assert.ok(clientApp.disconnectedDate, 'disconnect marker should remain while reconnect sync is running')
       assert.equal(serverRows.length, 0, 'offline row should not be pushed before sync is released')
 
       releaseSync()
@@ -613,7 +613,7 @@ describe('Full offline-first client ↔ server protocol', () => {
          await new Promise(resolve => setTimeout(resolve, 10))
       }
 
-      assert.equal(clientApp.disconnectedDate, null, 'disconnect cutoff should clear after reconnect sync completes')
+      assert.equal(clientApp.disconnectedDate, null, 'disconnect marker should clear after reconnect sync completes')
       assert.deepEqual(serverRows, [{ uid: 'reconnect-1', label: 'from reconnect' }])
 
       socket.disconnect()
@@ -1242,6 +1242,50 @@ describe('Full offline-first client ↔ server protocol', () => {
          assert.ok( uids.includes('hi'), 'score=7 should be pulled (≥ 5)')
       } finally {
          await cleanup()
+         pglite.close()
+      }
+   })
+
+   test('sync.go serializes overlapping where scopes on the server', async () => {
+      const modelName = `model${++dbCounter}`
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
+
+      await db.insert(modelTable).values({ uid: 'r1', label: 'x' })
+      await db.insert(metaTable).values({ uid: 'r1', created_at: T0 })
+
+      const serverApp = expressX({})
+      serverApp.configure(drizzleOfflinePlugin, db, metaTable, [modelTable])
+
+      const modelService = serverApp.service(modelName)
+      const originalFindMany = modelService.findMany
+      let releaseBroadFindMany
+      let broadFindManyEntered
+      let narrowFindManyEntered = false
+      const broadFindManyStarted = new Promise(resolve => { broadFindManyEntered = resolve })
+      const broadFindManyRelease = new Promise(resolve => { releaseBroadFindMany = resolve })
+
+      modelService.findMany = async (where) => {
+         if (Object.keys(where).length === 0) {
+            broadFindManyEntered()
+            await broadFindManyRelease
+         } else {
+            narrowFindManyEntered = true
+         }
+         return originalFindMany(where)
+      }
+
+      try {
+         const broadSync = serverApp.service('sync').go(modelName, {}, {})
+         await broadFindManyStarted
+
+         const narrowSync = serverApp.service('sync').go(modelName, { label: 'x' }, {})
+         await new Promise(resolve => setTimeout(resolve, 20))
+         assert.equal(narrowFindManyEntered, false, 'narrow overlapping sync must wait for broad sync')
+
+         releaseBroadFindMany()
+         await Promise.all([broadSync, narrowSync])
+         assert.equal(narrowFindManyEntered, true, 'narrow sync should run after broad sync releases')
+      } finally {
          pglite.close()
       }
    })

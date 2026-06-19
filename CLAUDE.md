@@ -61,7 +61,7 @@ No build step — the source is run directly as ES modules.
 
 The sync system reconciles a client Dexie cache with a server database. The protocol:
 
-1. Client calls `sync.go(modelName, where, cutoffDate, clientMetadataDict)` with its local metadata snapshot.
+1. Client calls `sync.go(modelName, where, clientMetadataDict)` with its local metadata snapshot.
 2. Server computes diff using `computeSyncResult` (exported from `server.mjs`, pure function, no I/O).
 3. Server returns `{ addClient, updateClient, deleteClient, addDatabase, updateDatabase }`.
 4. Client applies each batch: puts addClient records into Dexie, deletes deleteClient, updates updateClient, then calls `createWithMeta`/`updateWithMeta` for addDatabase/updateDatabase.
