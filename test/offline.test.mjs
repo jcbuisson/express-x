@@ -1532,6 +1532,86 @@ describe('Full offline-first client ↔ server protocol', () => {
       }
    })
 
+   test('stale direct create acknowledgement does not overwrite newer local update', async () => {
+      const modelName = `model${++dbCounter}`
+      let createRelease
+
+      const { clientApp, cleanup } = await createTestContext(serverApp => {
+         serverApp.createService(modelName, {
+            createWithMeta: async (uid, data, created_at) => {
+               await new Promise(resolve => { createRelease = resolve })
+               return [{ uid, ...data }, { uid, created_at, updated_at: null, deleted_at: null }]
+            },
+            updateWithMeta: async (uid, data, updated_at) => {
+               return [{ uid, ...data }, { uid, created_at: T0, updated_at, deleted_at: null }]
+            },
+            deleteWithMeta: async () => {},
+            findMany: async () => [],
+         })
+         serverApp.createService('sync', {
+            go: async () => ({ addClient: [], updateClient: [], deleteClient: [], addDatabase: [], updateDatabase: [] }),
+         })
+      }, { useOfflinePlugin: true })
+
+      try {
+         const model = clientApp.createOfflineModel(modelName, ['label'])
+
+         const record = await model.create({ label: 'first' })
+         await model.update(record.uid, { label: 'second' })
+         createRelease()
+         await new Promise(resolve => setTimeout(resolve, 50))
+
+         const value = await model.db.values.get(record.uid)
+         const meta = await model.db.metadata.get(record.uid)
+
+         assert.equal(value.label, 'second', 'older create acknowledgement must not restore initial value')
+         assert.equal(meta.__dirty__, false, 'newer acknowledged update should remain clean')
+         assert.ok(meta.updated_at, 'newer update timestamp should remain')
+      } finally {
+         await cleanup()
+      }
+   })
+
+   test('stale direct create rejection does not remove newer local update', async () => {
+      const modelName = `model${++dbCounter}`
+      let createRelease
+
+      const { clientApp, cleanup } = await createTestContext(serverApp => {
+         serverApp.createService(modelName, {
+            createWithMeta: async () => {
+               await new Promise(resolve => { createRelease = resolve })
+               throw new Error('create rejected late')
+            },
+            updateWithMeta: async (uid, data, updated_at) => {
+               return [{ uid, ...data }, { uid, created_at: T0, updated_at, deleted_at: null }]
+            },
+            deleteWithMeta: async () => {},
+            findMany: async () => [],
+         })
+         serverApp.createService('sync', {
+            go: async () => ({ addClient: [], updateClient: [], deleteClient: [], addDatabase: [], updateDatabase: [] }),
+         })
+      }, { useOfflinePlugin: true })
+
+      try {
+         const model = clientApp.createOfflineModel(modelName, ['label'])
+
+         const record = await model.create({ label: 'first' })
+         await model.update(record.uid, { label: 'second' })
+         createRelease()
+         await new Promise(resolve => setTimeout(resolve, 50))
+
+         const value = await model.db.values.get(record.uid)
+         const meta = await model.db.metadata.get(record.uid)
+
+         assert.equal(value.label, 'second', 'older create rejection must not remove newer local update')
+         assert.ok(meta, 'metadata must remain after stale create rejection')
+         assert.equal(meta.__dirty__, false, 'newer acknowledged update should remain clean')
+      } finally {
+         await cleanup()
+      }
+   })
+
    test('stale direct update rejection does not roll back newer local update', async () => {
       const modelName = `model${++dbCounter}`
       let firstUpdateRelease
