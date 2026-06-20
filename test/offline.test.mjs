@@ -1011,6 +1011,86 @@ describe('Full offline-first client ↔ server protocol', () => {
       await new Promise(resolve => serverApp.io.close(resolve))
    })
 
+   test('createWithMeta pub/sub tombstone response removes local row', async () => {
+      const modelName = `model${++dbCounter}`
+
+      const serverApp = expressX({})
+      serverApp.addConnectListener(socket => serverApp.joinChannel('all', socket))
+      await new Promise(resolve => serverApp.httpServer.listen(0, resolve))
+      const port = serverApp.httpServer.address().port
+
+      function connectClient() {
+         const socket = ioc(`http://localhost:${port}`, { transports: ['websocket'], autoConnect: false })
+         const app = createClient(socket, { debug: false })
+         offlinePlugin(app)
+         socket.connect()
+         return new Promise((resolve, reject) => {
+            socket.on('connect', () => resolve({ app, socket }))
+            socket.on('connect_error', reject)
+         })
+      }
+
+      const { app: appB, socket: socketB } = await connectClient()
+      const modelB = appB.createOfflineModel(modelName, ['label'])
+
+      await modelB.db.values.add({ uid: 'r1', label: 'old' })
+      await modelB.db.metadata.add({ uid: 'r1', created_at: T0 })
+
+      serverApp.io.to('all').emit('service-event', {
+         name: modelName,
+         action: 'createWithMeta',
+         result: [undefined, { uid: 'r1', created_at: T0, updated_at: null, deleted_at: T1 }],
+      })
+
+      await new Promise(r => setTimeout(r, 200))
+
+      assert.ok(!await modelB.db.values.get('r1'), 'pub/sub create tombstone should remove local value')
+      assert.ok(!await modelB.db.metadata.get('r1'), 'pub/sub create tombstone should remove local metadata')
+
+      socketB.disconnect()
+      await new Promise(resolve => serverApp.io.close(resolve))
+   })
+
+   test('updateWithMeta pub/sub tombstone response removes local row', async () => {
+      const modelName = `model${++dbCounter}`
+
+      const serverApp = expressX({})
+      serverApp.addConnectListener(socket => serverApp.joinChannel('all', socket))
+      await new Promise(resolve => serverApp.httpServer.listen(0, resolve))
+      const port = serverApp.httpServer.address().port
+
+      function connectClient() {
+         const socket = ioc(`http://localhost:${port}`, { transports: ['websocket'], autoConnect: false })
+         const app = createClient(socket, { debug: false })
+         offlinePlugin(app)
+         socket.connect()
+         return new Promise((resolve, reject) => {
+            socket.on('connect', () => resolve({ app, socket }))
+            socket.on('connect_error', reject)
+         })
+      }
+
+      const { app: appB, socket: socketB } = await connectClient()
+      const modelB = appB.createOfflineModel(modelName, ['label'])
+
+      await modelB.db.values.add({ uid: 'r1', label: 'old' })
+      await modelB.db.metadata.add({ uid: 'r1', created_at: T0 })
+
+      serverApp.io.to('all').emit('service-event', {
+         name: modelName,
+         action: 'updateWithMeta',
+         result: [undefined, { uid: 'r1', created_at: T0, updated_at: null, deleted_at: T1 }],
+      })
+
+      await new Promise(r => setTimeout(r, 200))
+
+      assert.ok(!await modelB.db.values.get('r1'), 'pub/sub update tombstone should remove local value')
+      assert.ok(!await modelB.db.metadata.get('r1'), 'pub/sub update tombstone should remove local metadata')
+
+      socketB.disconnect()
+      await new Promise(resolve => serverApp.io.close(resolve))
+   })
+
    test('stale pub/sub events do not overwrite newer dirty local state', async () => {
       const modelName = `model${++dbCounter}`
 
