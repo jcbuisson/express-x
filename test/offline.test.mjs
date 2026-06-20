@@ -1435,6 +1435,51 @@ describe('Full offline-first client ↔ server protocol', () => {
       }
    })
 
+   test('stale direct update acknowledgement does not overwrite newer local update', async () => {
+      const modelName = `model${++dbCounter}`
+      let firstUpdateRelease
+      let updateCount = 0
+
+      const { clientApp, cleanup } = await createTestContext(serverApp => {
+         serverApp.createService(modelName, {
+            updateWithMeta: async (uid, data, updated_at) => {
+               updateCount += 1
+               if (updateCount === 1) {
+                  await new Promise(resolve => { firstUpdateRelease = resolve })
+               }
+               return [{ uid, ...data }, { uid, created_at: T0, updated_at, deleted_at: null }]
+            },
+            createWithMeta: async () => {},
+            deleteWithMeta: async () => {},
+            findMany: async () => [],
+         })
+         serverApp.createService('sync', {
+            go: async () => ({ addClient: [], updateClient: [], deleteClient: [], addDatabase: [], updateDatabase: [] }),
+         })
+      }, { useOfflinePlugin: true })
+
+      try {
+         const model = clientApp.createOfflineModel(modelName, ['label'])
+         await model.db.values.add({ uid: 'r1', label: 'original' })
+         await model.db.metadata.add({ uid: 'r1', created_at: T0 })
+
+         model.update('r1', { label: 'first' })
+         await new Promise(resolve => setTimeout(resolve, 20))
+         await model.update('r1', { label: 'second' })
+         firstUpdateRelease()
+         await new Promise(resolve => setTimeout(resolve, 50))
+
+         const value = await model.db.values.get('r1')
+         const meta = await model.db.metadata.get('r1')
+
+         assert.equal(value.label, 'second', 'older acknowledgement must not restore first update')
+         assert.equal(meta.__dirty__, false, 'latest acknowledged update should clear dirty marker')
+         assert.equal(new Date(meta.updated_at).getTime() > T0.getTime(), true)
+      } finally {
+         await cleanup()
+      }
+   })
+
    test('update() rollback clears stale updated_at from metadata', async () => {
       // Optimistic update sets updated_at = now in metadata before the server responds.
       // On rejection the rollback does db.metadata.update(uid, previousMetadata), but
