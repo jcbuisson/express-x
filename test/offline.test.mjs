@@ -2124,6 +2124,38 @@ describe('Full offline-first client ↔ server protocol', () => {
       }
    })
 
+   test('covered active scope remains persisted after broader scope is removed', async () => {
+      const modelName = `model${++dbCounter}`
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
+
+      await db.insert(modelTable).values({ uid: 'r1', label: 'open' })
+      await db.insert(metaTable).values({ uid: 'r1', created_at: T0 })
+
+      const { clientApp, cleanup } = await createTestContext(
+         serverApp => serverApp.configure(drizzleOfflinePlugin, db, metaTable, [modelTable]),
+         { useOfflinePlugin: true },
+      )
+
+      try {
+         const model = clientApp.createOfflineModel(modelName, ['label'])
+
+         await model.addSynchroWhere({})
+         await model.addSynchroWhere({ label: 'open' })
+
+         await model.db.whereList.where('sortedjson').equals('{}').delete()
+         await model.db.values.clear()
+         await model.db.metadata.clear()
+
+         await model.synchronizeAll()
+
+         const rows = await model.findWhere({ label: 'open' })
+         assert.deepEqual(rows.map(row => row.uid), ['r1'])
+      } finally {
+         await cleanup()
+         pglite.close()
+      }
+   })
+
    test('initial connect syncs scopes registered while the client started offline', async () => {
       const modelName = `model${++dbCounter}`
       const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
