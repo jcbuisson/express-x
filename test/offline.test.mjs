@@ -885,6 +885,48 @@ describe('Full offline-first client ↔ server protocol', () => {
       }
    })
 
+   test('sync addDatabase live response replaces stale local value', async () => {
+      const modelName = `model${++dbCounter}`
+
+      const { clientApp, cleanup } = await createTestContext(serverApp => {
+         serverApp.createService(modelName, {
+            createWithMeta: async (uid) => [
+               { uid, label: 'server-new' },
+               { uid, created_at: T0, updated_at: T2, deleted_at: null },
+            ],
+            updateWithMeta: async () => {},
+            deleteWithMeta: async () => {},
+            findMany: async () => [],
+         })
+         serverApp.createService('sync', {
+            go: async (_modelName, _where, clientMetadataDict) => ({
+               addClient: [],
+               updateClient: [],
+               deleteClient: [],
+               addDatabase: [clientMetadataDict.r1],
+               updateDatabase: [],
+            }),
+         })
+      }, { useOfflinePlugin: true })
+
+      try {
+         const model = clientApp.createOfflineModel(modelName, ['label'])
+         await model.db.values.add({ uid: 'r1', label: 'client-old' })
+         await model.db.metadata.add({ uid: 'r1', created_at: T1, __dirty__: true })
+         await model.addSynchroWhere({})
+
+         await model.synchronizeAll()
+
+         const value = await model.db.values.get('r1')
+         const meta = await model.db.metadata.get('r1')
+         assert.equal(value.label, 'server-new', 'sync addDatabase live response should replace stale local value')
+         assert.equal(new Date(meta.updated_at).getTime(), T2.getTime())
+         assert.equal(meta.__dirty__, false)
+      } finally {
+         await cleanup()
+      }
+   })
+
    test('direct update acknowledgement removes local row when server returns tombstone', async () => {
       const modelName = `model${++dbCounter}`
       const futureDelete = new Date(Date.now() + 60_000)
@@ -964,6 +1006,48 @@ describe('Full offline-first client ↔ server protocol', () => {
 
          assert.ok(!await model.db.values.get('r1'), 'sync updateDatabase tombstone response should remove local value')
          assert.ok(!await model.db.metadata.get('r1'), 'sync updateDatabase tombstone response should remove local metadata')
+      } finally {
+         await cleanup()
+      }
+   })
+
+   test('sync updateDatabase live response replaces stale local value', async () => {
+      const modelName = `model${++dbCounter}`
+
+      const { clientApp, cleanup } = await createTestContext(serverApp => {
+         serverApp.createService(modelName, {
+            createWithMeta: async () => {},
+            updateWithMeta: async (uid) => [
+               { uid, label: 'server-new' },
+               { uid, created_at: T0, updated_at: T2, deleted_at: null },
+            ],
+            deleteWithMeta: async () => {},
+            findMany: async () => [],
+         })
+         serverApp.createService('sync', {
+            go: async (_modelName, _where, clientMetadataDict) => ({
+               addClient: [],
+               updateClient: [],
+               deleteClient: [],
+               addDatabase: [],
+               updateDatabase: [clientMetadataDict.r1],
+            }),
+         })
+      }, { useOfflinePlugin: true })
+
+      try {
+         const model = clientApp.createOfflineModel(modelName, ['label'])
+         await model.db.values.add({ uid: 'r1', label: 'client-old' })
+         await model.db.metadata.add({ uid: 'r1', created_at: T0, updated_at: T1, __dirty__: true })
+         await model.addSynchroWhere({})
+
+         await model.synchronizeAll()
+
+         const value = await model.db.values.get('r1')
+         const meta = await model.db.metadata.get('r1')
+         assert.equal(value.label, 'server-new', 'sync updateDatabase live response should replace stale local value')
+         assert.equal(new Date(meta.updated_at).getTime(), T2.getTime())
+         assert.equal(meta.__dirty__, false)
       } finally {
          await cleanup()
       }
