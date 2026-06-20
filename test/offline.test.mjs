@@ -2407,6 +2407,59 @@ describe('Full offline-first client ↔ server protocol', () => {
       }
    })
 
+   test('newer sync deleteClient deletes local update made during sync', async () => {
+      const modelName = `model${++dbCounter}`
+      const futureDelete = new Date(Date.now() + 60_000)
+      let resolveSyncStarted
+      let releaseSync
+      const syncStarted = new Promise(resolve => { resolveSyncStarted = resolve })
+      const syncRelease = new Promise(resolve => { releaseSync = resolve })
+
+      const { clientApp, cleanup } = await createTestContext(serverApp => {
+         serverApp.createService(modelName, {
+            updateWithMeta: async (uid, data, updated_at) => {
+               return [{ uid, ...data }, { uid, created_at: T0, updated_at, deleted_at: null }]
+            },
+            createWithMeta: async () => {},
+            deleteWithMeta: async () => {},
+            findMany: async () => [],
+         })
+         serverApp.createService('sync', {
+            go: async () => {
+               resolveSyncStarted()
+               await syncRelease
+               return {
+                  addClient: [],
+                  updateClient: [],
+                  deleteClient: [['r1', futureDelete]],
+                  addDatabase: [],
+                  updateDatabase: [],
+               }
+            },
+         })
+      }, { useOfflinePlugin: true })
+
+      try {
+         const model = clientApp.createOfflineModel(modelName, ['label'])
+         await model.db.values.add({ uid: 'r1', label: 'original' })
+         await model.db.metadata.add({ uid: 'r1', created_at: T0 })
+         await model.addSynchroWhere({})
+
+         const syncPromise = model.synchronizeAll()
+         await syncStarted
+         await model.update('r1', { label: 'local-new' })
+         releaseSync()
+         await syncPromise
+
+         assert.ok(!await model.db.values.get('r1'), 'newer sync deleteClient must delete local value changed during sync')
+         const meta = await model.db.metadata.get('r1')
+         assert.equal(new Date(meta.deleted_at).getTime(), futureDelete.getTime(), 'newer sync deleteClient should leave a clean tombstone guard')
+         assert.equal(meta.__dirty__, false)
+      } finally {
+         await cleanup()
+      }
+   })
+
    test('stale sync addClient does not overwrite newer local cache row', async () => {
       const modelName = `model${++dbCounter}`
       let resolveSyncStarted
