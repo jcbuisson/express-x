@@ -2562,6 +2562,42 @@ describe('Full offline-first client ↔ server protocol', () => {
       }
    })
 
+   test('sync addClient restores live row over equal-time local tombstone guard', async () => {
+      const modelName = `model${++dbCounter}`
+
+      const { clientApp, cleanup } = await createTestContext(serverApp => {
+         serverApp.createService('sync', {
+            go: async () => ({
+               addClient: [[
+                  { uid: 'r1', label: 'server-live' },
+                  { uid: 'r1', created_at: T1, updated_at: null, deleted_at: null },
+               ]],
+               updateClient: [],
+               deleteClient: [],
+               addDatabase: [],
+               updateDatabase: [],
+            }),
+         })
+      }, { useOfflinePlugin: true })
+
+      try {
+         const model = clientApp.createOfflineModel(modelName, ['label'])
+         await model.db.metadata.add({ uid: 'r1', created_at: T0, deleted_at: T1, __dirty__: false })
+         await model.addSynchroWhere({})
+
+         await model.synchronizeAll()
+
+         const value = await model.db.values.get('r1')
+         const meta = await model.db.metadata.get('r1')
+
+         assert.equal(value.label, 'server-live', 'live addClient row should replace equal-time local tombstone guard')
+         assert.ok(!meta.deleted_at, 'restored live row must clear local tombstone guard')
+         assert.equal(new Date(meta.created_at).getTime(), T1.getTime())
+      } finally {
+         await cleanup()
+      }
+   })
+
    test('stale sync updateDatabase acknowledgement does not clear newer dirty update', async () => {
       const modelName = `model${++dbCounter}`
       let firstUpdateRelease
