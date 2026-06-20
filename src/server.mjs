@@ -92,6 +92,17 @@ export function computeSyncResult(databaseValuesDict, clientMetadataDict, databa
          } else {
             addDatabase.push(clientMetaData)
          }
+      } else if (databaseMetaData) {
+         const clientUpdatedAt = new Date(clientMetaData.deleted_at || clientMetaData.updated_at || clientMetaData.created_at)
+         const databaseUpdatedAt = new Date(databaseMetaData.updated_at || databaseMetaData.created_at)
+         if (databaseUpdatedAt >= clientUpdatedAt) {
+            deleteDatabase.push(uid)
+            deleteClient.push([uid, databaseUpdatedAt])
+         } else if (clientMetaData.deleted_at) {
+            deleteClient.push([uid, clientMetaData.deleted_at])
+         } else {
+            addDatabase.push(clientMetaData)
+         }
       } else if (clientMetaData.deleted_at) {
          deleteClient.push([uid, clientMetaData.deleted_at])
       } else {
