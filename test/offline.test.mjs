@@ -621,6 +621,43 @@ describe('Full offline-first client ↔ server protocol', () => {
       }
    })
 
+   test('direct update older than orphaned server metadata tombstones and removes local row', async () => {
+      const modelName = `model${++dbCounter}`
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
+
+      await db.insert(metaTable).values({ uid: 'r1', created_at: T0, updated_at: T2 })
+
+      const { clientApp, cleanup } = await createTestContext(
+         serverApp => serverApp.configure(drizzleOfflinePlugin, db, metaTable, [modelTable]),
+         { useOfflinePlugin: true },
+      )
+
+      try {
+         const result = await clientApp.service(modelName).updateWithMeta('r1', { label: 'client-old' }, T1)
+         const [returnedValue, returnedMeta] = result
+
+         assert.equal(returnedValue == null, true, 'stale direct update should not return a row when server metadata is orphaned')
+         assert.equal(new Date(returnedMeta.deleted_at).getTime(), T2.getTime())
+
+         const rows = await db.select().from(modelTable).where(eq(modelTable.uid, 'r1'))
+         assert.equal(rows.length, 0, 'orphaned server row must remain absent')
+         const serverMeta = (await db.select().from(metaTable).where(eq(metaTable.uid, 'r1')))[0]
+         assert.equal(new Date(serverMeta.deleted_at).getTime(), T2.getTime(), 'orphaned live metadata should become a tombstone')
+
+         const model = clientApp.createOfflineModel(modelName, ['label'])
+         await model.db.values.add({ uid: 'r1', label: 'client-old' })
+         await model.db.metadata.add({ uid: 'r1', created_at: T0, updated_at: T1, __dirty__: true })
+         await model.addSynchroWhere({})
+         await model.synchronizeAll()
+
+         assert.ok(!await model.db.values.get('r1'), 'sync should remove stale local row after orphaned update tombstone')
+         assert.ok(!await model.db.metadata.get('r1'), 'sync should remove stale local metadata after orphaned update tombstone')
+      } finally {
+         await cleanup()
+         pglite.close()
+      }
+   })
+
    test('direct delete older than server update does not delete server row', async () => {
       const modelName = `model${++dbCounter}`
       const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
