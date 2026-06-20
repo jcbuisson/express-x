@@ -2299,6 +2299,49 @@ describe('Full offline-first client ↔ server protocol', () => {
       }
    })
 
+   test('stale direct delete acknowledgement does not overwrite newer local update', async () => {
+      const modelName = `model${++dbCounter}`
+      let deleteRelease
+
+      const { clientApp, cleanup } = await createTestContext(serverApp => {
+         serverApp.createService(modelName, {
+            deleteWithMeta: async (uid) => {
+               await new Promise(resolve => { deleteRelease = resolve })
+               return [{ uid, label: 'server-old' }, { uid, created_at: T0, updated_at: T1, deleted_at: null }]
+            },
+            updateWithMeta: async (uid, data, updated_at) => {
+               return [{ uid, ...data }, { uid, created_at: T0, updated_at, deleted_at: null }]
+            },
+            createWithMeta: async () => {},
+            findMany: async () => [],
+         })
+         serverApp.createService('sync', {
+            go: async () => ({ addClient: [], updateClient: [], deleteClient: [], addDatabase: [], updateDatabase: [] }),
+         })
+      }, { useOfflinePlugin: true })
+
+      try {
+         const model = clientApp.createOfflineModel(modelName, ['label'])
+         await model.db.values.add({ uid: 'r1', label: 'original' })
+         await model.db.metadata.add({ uid: 'r1', created_at: T0 })
+
+         model.remove('r1')
+         await new Promise(resolve => setTimeout(resolve, 20))
+         await model.update('r1', { label: 'local-new' })
+         deleteRelease()
+         await new Promise(resolve => setTimeout(resolve, 50))
+
+         const value = await model.db.values.get('r1')
+         const meta = await model.db.metadata.get('r1')
+
+         assert.equal(value.label, 'local-new', 'stale delete acknowledgement must not restore older server value')
+         assert.equal(new Date(meta.updated_at).getTime() > T1.getTime(), true, 'newer local update timestamp must remain')
+         assert.equal(meta.__dirty__, false)
+      } finally {
+         await cleanup()
+      }
+   })
+
    test('stale sync updateClient does not overwrite newer local update', async () => {
       const modelName = `model${++dbCounter}`
       let resolveSyncStarted
