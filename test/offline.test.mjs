@@ -414,7 +414,7 @@ describe('Full offline-first client ↔ server protocol', () => {
       }
    })
 
-   test('record deleted on server while client was offline is re-created on reconnect', async () => {
+   test('server tombstone newer than stale client copy deletes client cache on sync', async () => {
       const modelName = `model${++dbCounter}`
       const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
 
@@ -440,13 +440,14 @@ describe('Full offline-first client ↔ server protocol', () => {
          await model.addSynchroWhere({})
          await model.synchronizeAll()
 
-         // Client's copy should have been pushed back to the server
+         // Server tombstone is newer than the stale client copy, so the client
+         // must delete its cache instead of resurrecting the server row.
          const rows = await db.select().from(modelTable)
-         assert.ok(rows.find(r => r.uid === 'r1'), 'server should have r1 after client pushes it back')
-         assert.equal(rows.find(r => r.uid === 'r1').label, 'keep me')
-         // And client's Dexie should still have it
+         assert.ok(!rows.find(r => r.uid === 'r1'), 'server tombstone should not be recreated by stale client copy')
          const r1 = await model.db.values.get('r1')
-         assert.ok(r1, 'client Dexie should still have r1 after sync')
+         const meta = await model.db.metadata.get('r1')
+         assert.ok(!r1, 'client Dexie value should be deleted when server tombstone is newer')
+         assert.ok(!meta, 'client Dexie metadata should be deleted when server tombstone is newer')
       } finally {
          await cleanup()
          pglite.close()

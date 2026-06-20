@@ -51,6 +51,24 @@ describe('computeSyncResult', () => {
       assert.deepEqual(result.addDatabase, [])
    })
 
+   test('server tombstone newer than client copy → delete client, do not recreate DB', () => {
+      const clientMeta = { uid: 'x', created_at: T0 }
+      const dbTombstone = { uid: 'x', created_at: T0, deleted_at: T1 }
+      const result = computeSyncResult({}, { x: clientMeta }, { x: dbTombstone })
+      assert.deepEqual(result.deleteClient, [['x', T1]])
+      assert.deepEqual(result.addDatabase, [])
+      assert.deepEqual(result.updateDatabase, [])
+   })
+
+   test('client update newer than server tombstone → recreate database', () => {
+      const clientMeta = { uid: 'y', created_at: T0, updated_at: T2 }
+      const dbTombstone = { uid: 'y', created_at: T0, deleted_at: T1 }
+      const result = computeSyncResult({}, { y: clientMeta }, { y: dbTombstone })
+      assert.deepEqual(result.addDatabase, [clientMeta])
+      assert.deepEqual(result.deleteClient, [])
+      assert.deepEqual(result.updateDatabase, [])
+   })
+
    test('record in both, client newer → update database (updateDatabase)', () => {
       const value      = { uid: 'd', label: 'old' }
       const dbMeta     = { uid: 'd', created_at: T0, updated_at: T1 }
