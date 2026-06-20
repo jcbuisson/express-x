@@ -564,6 +564,44 @@ describe('Full offline-first client ↔ server protocol', () => {
       }
    })
 
+   test('direct update with no server row or metadata creates server row', async () => {
+      const modelName = `model${++dbCounter}`
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
+
+      const { clientApp, cleanup } = await createTestContext(
+         serverApp => serverApp.configure(drizzleOfflinePlugin, db, metaTable, [modelTable]),
+         { useOfflinePlugin: true },
+      )
+
+      try {
+         const model = clientApp.createOfflineModel(modelName, ['label'])
+         await model.db.values.add({ uid: 'r1', label: 'old-local' })
+         await model.db.metadata.add({ uid: 'r1', created_at: T0, __dirty__: false })
+
+         await model.update('r1', { label: 'client-new' })
+
+         let rows = []
+         let clientMeta = null
+         for (let i = 0; i < 50; i++) {
+            rows = await db.select().from(modelTable).where(eq(modelTable.uid, 'r1'))
+            clientMeta = await model.db.metadata.get('r1')
+            if (rows[0]?.label === 'client-new' && clientMeta?.__dirty__ === false) break
+            await new Promise(resolve => setTimeout(resolve, 10))
+         }
+
+         assert.equal(rows[0]?.label, 'client-new', 'server row must exist after updateWithMeta')
+         const serverMeta = (await db.select().from(metaTable).where(eq(metaTable.uid, 'r1')))[0]
+         assert.ok(serverMeta.updated_at, 'server metadata should record the update timestamp')
+         assert.equal(serverMeta.deleted_at, null)
+         const clientValue = await model.db.values.get('r1')
+         assert.equal(clientValue.label, 'client-new')
+         assert.equal(clientMeta.__dirty__, false, 'sync should mark the created server row clean')
+      } finally {
+         await cleanup()
+         pglite.close()
+      }
+   })
+
    test('direct update older than server tombstone deletes stale server row', async () => {
       const modelName = `model${++dbCounter}`
       const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
