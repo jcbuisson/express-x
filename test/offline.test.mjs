@@ -626,6 +626,88 @@ describe('Full offline-first client ↔ server protocol', () => {
       }
    })
 
+   test('direct create acknowledgement removes optimistic row when server returns tombstone', async () => {
+      const modelName = `model${++dbCounter}`
+      const futureDelete = new Date(Date.now() + 60_000)
+      let resolveCreateStarted
+      let createRelease
+      const createStarted = new Promise(resolve => { resolveCreateStarted = resolve })
+      const createCanReturn = new Promise(resolve => { createRelease = resolve })
+
+      const { clientApp, cleanup } = await createTestContext(serverApp => {
+         serverApp.createService(modelName, {
+            createWithMeta: async (uid) => {
+               resolveCreateStarted()
+               await createCanReturn
+               return [null, { uid, created_at: T0, updated_at: null, deleted_at: futureDelete }]
+            },
+            updateWithMeta: async () => {},
+            deleteWithMeta: async () => {},
+            findMany: async () => [],
+         })
+         serverApp.createService('sync', {
+            go: async () => ({ addClient: [], updateClient: [], deleteClient: [], addDatabase: [], updateDatabase: [] }),
+         })
+      }, { useOfflinePlugin: true })
+
+      try {
+         const model = clientApp.createOfflineModel(modelName, ['label'])
+
+         const record = await model.create({ label: 'client-old' })
+         await createStarted
+         createRelease()
+
+         for (let i = 0; i < 50; i++) {
+            const value = await model.db.values.get(record.uid)
+            const meta = await model.db.metadata.get(record.uid)
+            if (!value && !meta) break
+            await new Promise(resolve => setTimeout(resolve, 10))
+         }
+
+         assert.ok(!await model.db.values.get(record.uid), 'optimistic create value should be removed when server returns tombstone')
+         assert.ok(!await model.db.metadata.get(record.uid), 'optimistic create metadata should be removed when server returns tombstone')
+      } finally {
+         await cleanup()
+      }
+   })
+
+   test('sync addDatabase tombstone response removes optimistic local row', async () => {
+      const modelName = `model${++dbCounter}`
+      const futureDelete = new Date(Date.now() + 60_000)
+
+      const { clientApp, cleanup } = await createTestContext(serverApp => {
+         serverApp.createService(modelName, {
+            createWithMeta: async (uid) => [null, { uid, created_at: T0, updated_at: null, deleted_at: futureDelete }],
+            updateWithMeta: async () => {},
+            deleteWithMeta: async () => {},
+            findMany: async () => [],
+         })
+         serverApp.createService('sync', {
+            go: async (_modelName, _where, clientMetadataDict) => ({
+               addClient: [],
+               updateClient: [],
+               deleteClient: [],
+               addDatabase: [clientMetadataDict.r1],
+               updateDatabase: [],
+            }),
+         })
+      }, { useOfflinePlugin: true })
+
+      try {
+         const model = clientApp.createOfflineModel(modelName, ['label'])
+         await model.db.values.add({ uid: 'r1', label: 'client-old' })
+         await model.db.metadata.add({ uid: 'r1', created_at: T1, __dirty__: true })
+         await model.addSynchroWhere({})
+
+         await model.synchronizeAll()
+
+         assert.ok(!await model.db.values.get('r1'), 'sync addDatabase tombstone response should remove local value')
+         assert.ok(!await model.db.metadata.get('r1'), 'sync addDatabase tombstone response should remove local metadata')
+      } finally {
+         await cleanup()
+      }
+   })
+
    test('offline changes are synced after server restart', async () => {
       const modelName = `model${++dbCounter}`
       const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
