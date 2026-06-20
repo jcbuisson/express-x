@@ -1812,6 +1812,114 @@ describe('Full offline-first client ↔ server protocol', () => {
       }
    })
 
+   test('stale sync updateDatabase acknowledgement does not clear newer dirty update', async () => {
+      const modelName = `model${++dbCounter}`
+      let firstUpdateRelease
+      let updateCount = 0
+
+      const { clientApp, cleanup } = await createTestContext(serverApp => {
+         serverApp.createService(modelName, {
+            updateWithMeta: async (uid, data, updated_at) => {
+               updateCount += 1
+               if (updateCount === 1) {
+                  await new Promise(resolve => { firstUpdateRelease = resolve })
+               }
+               return [{ uid, ...data }, { uid, created_at: T0, updated_at, deleted_at: null }]
+            },
+            createWithMeta: async () => {},
+            deleteWithMeta: async () => {},
+            findMany: async () => [],
+         })
+         serverApp.createService('sync', {
+            go: async (_modelName, _where, clientMetadataDict) => ({
+               addClient: [],
+               updateClient: [],
+               deleteClient: [],
+               addDatabase: [],
+               updateDatabase: [clientMetadataDict.r1],
+            }),
+         })
+      }, { useOfflinePlugin: true })
+
+      try {
+         const model = clientApp.createOfflineModel(modelName, ['label'])
+         await model.db.values.add({ uid: 'r1', label: 'first' })
+         await model.db.metadata.add({ uid: 'r1', created_at: T0, updated_at: T1, __dirty__: true })
+         await model.addSynchroWhere({})
+
+         const syncPromise = model.synchronizeAll()
+         await new Promise(resolve => setTimeout(resolve, 20))
+         await model.update('r1', { label: 'second' })
+         firstUpdateRelease()
+         await syncPromise
+
+         const value = await model.db.values.get('r1')
+         const meta = await model.db.metadata.get('r1')
+
+         assert.equal(value.label, 'second', 'newer local value must remain after stale updateDatabase acknowledgement')
+         assert.equal(new Date(meta.updated_at).getTime() > T1.getTime(), true, 'newer metadata timestamp must remain')
+         assert.equal(meta.__dirty__, false, 'newer direct update acknowledgement should remain clean')
+      } finally {
+         await cleanup()
+      }
+   })
+
+   test('stale sync addDatabase rejection does not remove newer local update', async () => {
+      const modelName = `model${++dbCounter}`
+      let createRelease
+
+      const { clientApp, cleanup } = await createTestContext(serverApp => {
+         serverApp.createService(modelName, {
+            createWithMeta: async () => {
+               await new Promise(resolve => { createRelease = resolve })
+               throw new Error('stale create rejected')
+            },
+            updateWithMeta: async (uid, data, updated_at) => {
+               return [{ uid, ...data }, { uid, created_at: T0, updated_at, deleted_at: null }]
+            },
+            deleteWithMeta: async () => {},
+            findMany: async () => [],
+         })
+         serverApp.createService('sync', {
+            go: async (_modelName, _where, clientMetadataDict) => ({
+               addClient: [],
+               updateClient: [],
+               deleteClient: [],
+               addDatabase: [clientMetadataDict.r1],
+               updateDatabase: [],
+            }),
+         })
+      }, { useOfflinePlugin: true })
+
+      try {
+         const model = clientApp.createOfflineModel(modelName, ['label'])
+         await model.db.values.add({ uid: 'r1', label: 'first' })
+         await model.db.metadata.add({ uid: 'r1', created_at: T1, __dirty__: true })
+         await model.addSynchroWhere({})
+
+         const syncPromise = model.synchronizeAll()
+         await new Promise(resolve => setTimeout(resolve, 20))
+         await model.update('r1', { label: 'second' })
+         createRelease()
+         await syncPromise
+
+         for (let i = 0; i < 50; i++) {
+            const meta = await model.db.metadata.get('r1')
+            if (meta?.__dirty__ === false) break
+            await new Promise(resolve => setTimeout(resolve, 10))
+         }
+
+         const value = await model.db.values.get('r1')
+         const meta = await model.db.metadata.get('r1')
+
+         assert.equal(value.label, 'second', 'stale addDatabase rejection must not remove newer local update')
+         assert.ok(meta, 'metadata must remain after stale addDatabase rejection')
+         assert.equal(meta.__dirty__, false, 'newer direct update acknowledgement should remain clean')
+      } finally {
+         await cleanup()
+      }
+   })
+
    test('update() rollback clears stale updated_at from metadata', async () => {
       // Optimistic update sets updated_at = now in metadata before the server responds.
       // On rejection the rollback does db.metadata.update(uid, previousMetadata), but
