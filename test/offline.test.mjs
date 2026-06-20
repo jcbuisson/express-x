@@ -500,6 +500,36 @@ describe('Full offline-first client ↔ server protocol', () => {
       }
    })
 
+   test('direct delete older than server update does not delete server row', async () => {
+      const modelName = `model${++dbCounter}`
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
+
+      await db.insert(modelTable).values({ uid: 'r1', label: 'server-new' })
+      await db.insert(metaTable).values({ uid: 'r1', created_at: T0, updated_at: T2 })
+
+      const { clientApp, cleanup } = await createTestContext(
+         serverApp => serverApp.configure(drizzleOfflinePlugin, db, metaTable, [modelTable]),
+         { useOfflinePlugin: true },
+      )
+
+      try {
+         const result = await clientApp.service(modelName).deleteWithMeta('r1', T1)
+         const [returnedValue, returnedMeta] = result
+
+         assert.equal(returnedValue.label, 'server-new', 'stale direct delete should return the newer server row')
+         assert.ok(!returnedMeta.deleted_at, 'stale direct delete should not write a tombstone')
+
+         const rows = await db.select().from(modelTable).where(eq(modelTable.uid, 'r1'))
+         assert.equal(rows[0]?.label, 'server-new', 'server row must survive stale direct delete')
+         const serverMeta = (await db.select().from(metaTable).where(eq(metaTable.uid, 'r1')))[0]
+         assert.ok(!serverMeta.deleted_at, 'server metadata must not be tombstoned by stale direct delete')
+         assert.equal(new Date(serverMeta.updated_at).getTime(), T2.getTime())
+      } finally {
+         await cleanup()
+         pglite.close()
+      }
+   })
+
    test('offline changes are synced after server restart', async () => {
       const modelName = `model${++dbCounter}`
       const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
