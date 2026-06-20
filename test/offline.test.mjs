@@ -454,6 +454,52 @@ describe('Full offline-first client ↔ server protocol', () => {
       }
    })
 
+   test('direct update newer than server tombstone re-creates server row', async () => {
+      const modelName = `model${++dbCounter}`
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
+
+      await db.insert(modelTable).values({ uid: 'r1', label: 'original' })
+      await db.insert(metaTable).values({ uid: 'r1', created_at: T0 })
+      await db.delete(modelTable).where(eq(modelTable.uid, 'r1'))
+      await db.update(metaTable).set({ deleted_at: T1 }).where(eq(metaTable.uid, 'r1'))
+
+      const { clientApp, cleanup } = await createTestContext(
+         serverApp => serverApp.configure(drizzleOfflinePlugin, db, metaTable, [modelTable]),
+         { useOfflinePlugin: true },
+      )
+
+      try {
+         const model = clientApp.createOfflineModel(modelName, ['label'])
+         await model.db.values.add({ uid: 'r1', label: 'stale-client' })
+         await model.db.metadata.add({ uid: 'r1', created_at: T0 })
+
+         await model.update('r1', { label: 'client-new' })
+
+         let rows = []
+         for (let i = 0; i < 50; i++) {
+            rows = await db.select().from(modelTable).where(eq(modelTable.uid, 'r1'))
+            if (rows[0]?.label === 'client-new') break
+            await new Promise(resolve => setTimeout(resolve, 10))
+         }
+
+         assert.equal(rows[0]?.label, 'client-new', 'newer direct client update should recreate server row')
+         const serverMeta = (await db.select().from(metaTable).where(eq(metaTable.uid, 'r1')))[0]
+         assert.ok(!serverMeta.deleted_at, 'server tombstone should be cleared after newer direct update')
+         assert.equal(new Date(serverMeta.updated_at).getTime() > T1.getTime(), true)
+
+         await model.addSynchroWhere({})
+         await model.synchronizeAll()
+
+         const clientValue = await model.db.values.get('r1')
+         const clientMeta = await model.db.metadata.get('r1')
+         assert.equal(clientValue.label, 'client-new', 'sync should not delete the recreated client row')
+         assert.ok(!clientMeta.deleted_at, 'client metadata should not keep the old tombstone')
+      } finally {
+         await cleanup()
+         pglite.close()
+      }
+   })
+
    test('offline changes are synced after server restart', async () => {
       const modelName = `model${++dbCounter}`
       const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
