@@ -1763,6 +1763,40 @@ describe('Full offline-first client ↔ server protocol', () => {
       }
    })
 
+   test('remove() creates tombstone metadata when local metadata is missing', async () => {
+      const modelName = `model${++dbCounter}`
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
+
+      const { clientApp, cleanup } = await createTestContext(
+         serverApp => serverApp.configure(drizzleOfflinePlugin, db, metaTable, [modelTable]),
+         { useOfflinePlugin: true },
+      )
+
+      try {
+         const model = clientApp.createOfflineModel(modelName, ['label'])
+         await model.db.values.add({ uid: 'r1', label: 'orphan-local-value' })
+
+         await model.remove('r1')
+
+         let localMeta = await model.db.metadata.get('r1')
+         assert.ok(localMeta?.deleted_at, 'remove() must create a dirty tombstone when metadata is missing')
+         assert.equal(localMeta.__dirty__, true)
+
+         await model.addSynchroWhere({})
+         await model.synchronizeAll()
+
+         assert.ok(!await model.db.values.get('r1'), 'sync should delete the locally removed orphan value')
+         localMeta = await model.db.metadata.get('r1')
+         assert.ok(!localMeta, 'sync should clear tombstone metadata after acknowledging local-only delete')
+
+         const serverRows = await db.select().from(modelTable).where(eq(modelTable.uid, 'r1'))
+         assert.equal(serverRows.length, 0, 'local orphan delete must not create a server row')
+      } finally {
+         await cleanup()
+         pglite.close()
+      }
+   })
+
    test('app-event for unregistered type is silently ignored, not TypeError', async () => {
       // When an app-event arrives for a type with no registered handler,
       // type2appHandler[type] is undefined.  The guard
