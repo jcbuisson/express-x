@@ -561,6 +561,35 @@ describe('Full offline-first client ↔ server protocol', () => {
       }
    })
 
+   test('direct update older than server update does not overwrite server row', async () => {
+      const modelName = `model${++dbCounter}`
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
+
+      await db.insert(modelTable).values({ uid: 'r1', label: 'server-new' })
+      await db.insert(metaTable).values({ uid: 'r1', created_at: T0, updated_at: T2 })
+
+      const { clientApp, cleanup } = await createTestContext(
+         serverApp => serverApp.configure(drizzleOfflinePlugin, db, metaTable, [modelTable]),
+         { useOfflinePlugin: true },
+      )
+
+      try {
+         const result = await clientApp.service(modelName).updateWithMeta('r1', { label: 'client-old' }, T1)
+         const [returnedValue, returnedMeta] = result
+
+         assert.equal(returnedValue.label, 'server-new', 'stale direct update should return the newer server row')
+         assert.equal(new Date(returnedMeta.updated_at).getTime(), T2.getTime())
+
+         const rows = await db.select().from(modelTable).where(eq(modelTable.uid, 'r1'))
+         assert.equal(rows[0]?.label, 'server-new', 'server row must survive stale direct update')
+         const serverMeta = (await db.select().from(metaTable).where(eq(metaTable.uid, 'r1')))[0]
+         assert.equal(new Date(serverMeta.updated_at).getTime(), T2.getTime(), 'server metadata must not be downgraded')
+      } finally {
+         await cleanup()
+         pglite.close()
+      }
+   })
+
    test('direct delete older than server update does not delete server row', async () => {
       const modelName = `model${++dbCounter}`
       const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
