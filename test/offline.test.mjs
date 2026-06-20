@@ -454,6 +454,38 @@ describe('Full offline-first client ↔ server protocol', () => {
       }
    })
 
+   test('server tombstone deletes stale server row and client cache on sync', async () => {
+      const modelName = `model${++dbCounter}`
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
+
+      await db.insert(modelTable).values({ uid: 'r1', label: 'stale-server-row' })
+      await db.insert(metaTable).values({ uid: 'r1', created_at: T0, deleted_at: T1 })
+
+      const { clientApp, cleanup } = await createTestContext(
+         serverApp => serverApp.configure(drizzleOfflinePlugin, db, metaTable, [modelTable]),
+         { useOfflinePlugin: true },
+      )
+
+      try {
+         const model = clientApp.createOfflineModel(modelName, ['label'])
+         await model.db.values.add({ uid: 'r1', label: 'stale-client-row' })
+         await model.db.metadata.add({ uid: 'r1', created_at: T0 })
+         await model.addSynchroWhere({})
+
+         await model.synchronizeAll()
+
+         const rows = await db.select().from(modelTable).where(eq(modelTable.uid, 'r1'))
+         assert.equal(rows.length, 0, 'stale server row must be deleted when metadata has a newer tombstone')
+         const serverMeta = (await db.select().from(metaTable).where(eq(metaTable.uid, 'r1')))[0]
+         assert.equal(new Date(serverMeta.deleted_at).getTime(), T1.getTime())
+         assert.ok(!await model.db.values.get('r1'), 'client value should be deleted by server tombstone')
+         assert.ok(!await model.db.metadata.get('r1'), 'client metadata should be deleted by server tombstone')
+      } finally {
+         await cleanup()
+         pglite.close()
+      }
+   })
+
    test('direct update newer than server tombstone re-creates server row', async () => {
       const modelName = `model${++dbCounter}`
       const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)

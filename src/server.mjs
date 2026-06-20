@@ -102,7 +102,19 @@ export function computeSyncResult(databaseValuesDict, clientMetadataDict, databa
    for (const uid of databaseAndClientIds) {
       const clientMetaData = clientMetadataDict[uid]
       const databaseMetaData = databaseMetadataDict[uid] || { uid, created_at: null }
-      if (clientMetaData.deleted_at) {
+      if (databaseMetaData.deleted_at) {
+         const clientUpdatedAt = new Date(clientMetaData.deleted_at || clientMetaData.updated_at || clientMetaData.created_at)
+         const databaseDeletedAt = new Date(databaseMetaData.deleted_at)
+         if (databaseDeletedAt >= clientUpdatedAt) {
+            deleteDatabase.push(uid)
+            deleteClient.push([uid, databaseMetaData.deleted_at])
+         } else if (clientMetaData.deleted_at) {
+            deleteDatabase.push(uid)
+            deleteClient.push([uid, clientMetaData.deleted_at])
+         } else {
+            updateDatabase.push(clientMetaData)
+         }
+      } else if (clientMetaData.deleted_at) {
          const clientDeletedAt = new Date(clientMetaData.deleted_at)
          const databaseUpdatedAt = new Date(databaseMetaData.updated_at || databaseMetaData.created_at)
          const diff = clientDeletedAt - databaseUpdatedAt
