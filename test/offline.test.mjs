@@ -9,6 +9,7 @@ import { test, describe, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { io as ioc } from 'socket.io-client'
 import { firstValueFrom } from 'rxjs'
+import { effectScope } from 'vue'
 import { PGlite } from '@electric-sql/pglite'
 import { drizzle } from 'drizzle-orm/pglite'
 import { pgTable, text, timestamp, integer } from 'drizzle-orm/pg-core'
@@ -2151,6 +2152,56 @@ describe('Full offline-first client ↔ server protocol', () => {
          const rows = await model.findWhere({ label: 'open' })
          assert.deepEqual(rows.map(row => row.uid), ['r1'])
       } finally {
+         await cleanup()
+         pglite.close()
+      }
+   })
+
+   test('disposing one offline model scope does not remove another active sync scope', async () => {
+      const modelName = `model${++dbCounter}`
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
+
+      await db.insert(modelTable).values([
+         { uid: 'r1', label: 'open' },
+         { uid: 'r2', label: 'closed' },
+      ])
+      await db.insert(metaTable).values([
+         { uid: 'r1', created_at: T0 },
+         { uid: 'r2', created_at: T0 },
+      ])
+
+      const { clientApp, cleanup } = await createTestContext(
+         serverApp => serverApp.configure(drizzleOfflinePlugin, db, metaTable, [modelTable]),
+         { useOfflinePlugin: true },
+      )
+
+      const scopeA = effectScope()
+      const scopeB = effectScope()
+
+      try {
+         const modelA = scopeA.run(() => clientApp.createOfflineModel(modelName, ['label']))
+         const modelB = scopeB.run(() => clientApp.createOfflineModel(modelName, ['label']))
+
+         await modelA.addSynchroWhere({ label: 'open' })
+         await modelB.addSynchroWhere({ label: 'closed' })
+
+         scopeA.stop()
+
+         let storedScopes = []
+         for (let i = 0; i < 50; i++) {
+            storedScopes = (await modelB.db.whereList.toArray()).map(row => row.sortedjson).sort()
+            if (!storedScopes.includes('{"label":"open"}')) break
+            await new Promise(resolve => setTimeout(resolve, 10))
+         }
+
+         assert.deepEqual(storedScopes, ['{"label":"closed"}'])
+
+         await modelB.synchronizeAll()
+         const rows = await modelB.findWhere({ label: 'closed' })
+         assert.deepEqual(rows.map(row => row.uid), ['r2'])
+      } finally {
+         scopeA.stop()
+         scopeB.stop()
          await cleanup()
          pglite.close()
       }
