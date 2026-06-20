@@ -530,6 +530,45 @@ describe('Full offline-first client ↔ server protocol', () => {
       }
    })
 
+   test('direct delete acknowledgement restores client when server row is newer', async () => {
+      const modelName = `model${++dbCounter}`
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
+      const futureUpdate = new Date(Date.now() + 60_000)
+
+      await db.insert(modelTable).values({ uid: 'r1', label: 'server-new' })
+      await db.insert(metaTable).values({ uid: 'r1', created_at: T0, updated_at: futureUpdate })
+
+      const { clientApp, cleanup } = await createTestContext(
+         serverApp => serverApp.configure(drizzleOfflinePlugin, db, metaTable, [modelTable]),
+         { useOfflinePlugin: true },
+      )
+
+      try {
+         const model = clientApp.createOfflineModel(modelName, ['label'])
+         await model.db.values.add({ uid: 'r1', label: 'client-old' })
+         await model.db.metadata.add({ uid: 'r1', created_at: T0 })
+
+         await model.remove('r1')
+
+         let value
+         for (let i = 0; i < 50; i++) {
+            value = await model.db.values.get('r1')
+            if (value?.label === 'server-new' && !value.__deleted__) break
+            await new Promise(resolve => setTimeout(resolve, 10))
+         }
+
+         const meta = await model.db.metadata.get('r1')
+         assert.equal(value?.label, 'server-new', 'client should restore newer server row after stale delete acknowledgement')
+         assert.ok(!value.__deleted__, 'client restored row must not remain hidden')
+         assert.ok(!meta.deleted_at, 'client metadata must not keep stale delete timestamp')
+         assert.equal(new Date(meta.updated_at).getTime(), futureUpdate.getTime())
+         assert.equal(meta.__dirty__, false)
+      } finally {
+         await cleanup()
+         pglite.close()
+      }
+   })
+
    test('offline changes are synced after server restart', async () => {
       const modelName = `model${++dbCounter}`
       const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
