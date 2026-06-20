@@ -1812,6 +1812,50 @@ describe('Full offline-first client ↔ server protocol', () => {
       }
    })
 
+   test('stale sync addClient does not overwrite newer local cache row', async () => {
+      const modelName = `model${++dbCounter}`
+      let resolveSyncStarted
+      let releaseSync
+      const syncStarted = new Promise(resolve => { resolveSyncStarted = resolve })
+      const syncRelease = new Promise(resolve => { releaseSync = resolve })
+
+      const { clientApp, cleanup } = await createTestContext(serverApp => {
+         serverApp.createService('sync', {
+            go: async () => {
+               resolveSyncStarted()
+               await syncRelease
+               return {
+                  addClient: [[{ uid: 'r1', label: 'server-old' }, { uid: 'r1', created_at: T1, updated_at: null, deleted_at: null }]],
+                  updateClient: [],
+                  deleteClient: [],
+                  addDatabase: [],
+                  updateDatabase: [],
+               }
+            },
+         })
+      }, { useOfflinePlugin: true })
+
+      try {
+         const model = clientApp.createOfflineModel(modelName, ['label'])
+         await model.addSynchroWhere({})
+
+         const syncPromise = model.synchronizeAll()
+         await syncStarted
+         await model.db.values.put({ uid: 'r1', label: 'local-new' })
+         await model.db.metadata.put({ uid: 'r1', created_at: T2, updated_at: null, deleted_at: null, __dirty__: false })
+         releaseSync()
+         await syncPromise
+
+         const value = await model.db.values.get('r1')
+         const meta = await model.db.metadata.get('r1')
+
+         assert.equal(value.label, 'local-new', 'stale sync addClient must not overwrite newer local cache row')
+         assert.equal(new Date(meta.created_at).getTime(), T2.getTime(), 'newer local metadata should remain')
+      } finally {
+         await cleanup()
+      }
+   })
+
    test('stale sync updateDatabase acknowledgement does not clear newer dirty update', async () => {
       const modelName = `model${++dbCounter}`
       let firstUpdateRelease
@@ -1852,6 +1896,12 @@ describe('Full offline-first client ↔ server protocol', () => {
          await model.update('r1', { label: 'second' })
          firstUpdateRelease()
          await syncPromise
+
+         for (let i = 0; i < 50; i++) {
+            const meta = await model.db.metadata.get('r1')
+            if (meta?.__dirty__ === false) break
+            await new Promise(resolve => setTimeout(resolve, 10))
+         }
 
          const value = await model.db.values.get('r1')
          const meta = await model.db.metadata.get('r1')
@@ -2021,7 +2071,7 @@ describe('Full offline-first client ↔ server protocol', () => {
       const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
 
       await db.insert(modelTable).values({ uid: 'r1', label: 'from-server' })
-      await db.insert(metaTable).values({ uid: 'r1', created_at: T0 })
+      await db.insert(metaTable).values({ uid: 'r1', created_at: T2 })
 
       const { clientApp, cleanup } = await createTestContext(
          serverApp => serverApp.configure(drizzleOfflinePlugin, db, metaTable, [modelTable]),
