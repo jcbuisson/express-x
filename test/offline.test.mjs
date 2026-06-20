@@ -672,6 +672,57 @@ describe('Full offline-first client ↔ server protocol', () => {
       await new Promise(resolve => serverApp.io.close(resolve))
    })
 
+   test('stale pub/sub events do not overwrite newer dirty local state', async () => {
+      const modelName = `model${++dbCounter}`
+
+      const serverApp = expressX({})
+      serverApp.addConnectListener(socket => serverApp.joinChannel('all', socket))
+      await new Promise(resolve => serverApp.httpServer.listen(0, resolve))
+      const port = serverApp.httpServer.address().port
+
+      function connectClient() {
+         const socket = ioc(`http://localhost:${port}`, { transports: ['websocket'], autoConnect: false })
+         const app = createClient(socket, { debug: false })
+         offlinePlugin(app)
+         socket.connect()
+         return new Promise((resolve, reject) => {
+            socket.on('connect', () => resolve({ app, socket }))
+            socket.on('connect_error', reject)
+         })
+      }
+
+      const { app: appB, socket: socketB } = await connectClient()
+      const modelB = appB.createOfflineModel(modelName, ['label'])
+
+      await modelB.db.values.add({ uid: 'r1', label: 'local-new' })
+      await modelB.db.metadata.add({ uid: 'r1', created_at: T0, updated_at: T2, __dirty__: true })
+
+      serverApp.io.to('all').emit('service-event', {
+         name: modelName,
+         action: 'updateWithMeta',
+         result: [{ uid: 'r1', label: 'server-old' }, { uid: 'r1', created_at: T0, updated_at: T1, deleted_at: null }],
+      })
+
+      await new Promise(r => setTimeout(r, 100))
+
+      serverApp.io.to('all').emit('service-event', {
+         name: modelName,
+         action: 'deleteWithMeta',
+         result: [{ uid: 'r1', label: 'server-old' }, { uid: 'r1', created_at: T0, updated_at: null, deleted_at: T1 }],
+      })
+
+      await new Promise(r => setTimeout(r, 100))
+
+      const value = await modelB.db.values.get('r1')
+      const meta = await modelB.db.metadata.get('r1')
+      assert.equal(value?.label, 'local-new', 'stale pub/sub update/delete must not overwrite newer dirty value')
+      assert.equal(new Date(meta?.updated_at).getTime(), T2.getTime(), 'stale pub/sub event must not downgrade metadata')
+      assert.equal(meta?.__dirty__, true, 'dirty marker must survive stale pub/sub event')
+
+      socketB.disconnect()
+      await new Promise(resolve => serverApp.io.close(resolve))
+   })
+
    test('deleteWithMeta pub/sub handler uses delete not put to avoid orphan metadata', async () => {
       // synchronize() step 2 deletes both idbValues and idbMetadata for deleteClient uids.
       // The deleteWithMeta pub/sub event may arrive on the SAME tab either before or after
