@@ -1578,6 +1578,52 @@ describe('Full offline-first client ↔ server protocol', () => {
       }
    })
 
+   test('stale direct delete rejection does not roll back newer delete', async () => {
+      const modelName = `model${++dbCounter}`
+      let firstDeleteRelease
+      let deleteCount = 0
+
+      const { clientApp, cleanup } = await createTestContext(serverApp => {
+         serverApp.createService(modelName, {
+            deleteWithMeta: async (uid, deleted_at) => {
+               deleteCount += 1
+               if (deleteCount === 1) {
+                  await new Promise(resolve => { firstDeleteRelease = resolve })
+                  throw new Error('first delete rejected late')
+               }
+               return [{ uid, label: 'original' }, { uid, created_at: T0, deleted_at, updated_at: null }]
+            },
+            createWithMeta: async () => {},
+            updateWithMeta: async () => {},
+            findMany: async () => [],
+         })
+         serverApp.createService('sync', {
+            go: async () => ({ addClient: [], updateClient: [], deleteClient: [], addDatabase: [], updateDatabase: [] }),
+         })
+      }, { useOfflinePlugin: true })
+
+      try {
+         const model = clientApp.createOfflineModel(modelName, ['label'])
+         await model.db.values.add({ uid: 'r1', label: 'original' })
+         await model.db.metadata.add({ uid: 'r1', created_at: T0 })
+
+         model.remove('r1')
+         await new Promise(resolve => setTimeout(resolve, 20))
+         await model.remove('r1')
+         firstDeleteRelease()
+         await new Promise(resolve => setTimeout(resolve, 50))
+
+         const value = await model.db.values.get('r1')
+         const meta = await model.db.metadata.get('r1')
+
+         assert.equal(value.__deleted__, true, 'older rejection must not undelete the newer delete')
+         assert.ok(meta.deleted_at, 'newer delete timestamp should remain')
+         assert.equal(meta.__dirty__, false, 'newer acknowledged delete should remain clean')
+      } finally {
+         await cleanup()
+      }
+   })
+
    test('update() rollback clears stale updated_at from metadata', async () => {
       // Optimistic update sets updated_at = now in metadata before the server responds.
       // On rejection the rollback does db.metadata.update(uid, previousMetadata), but
