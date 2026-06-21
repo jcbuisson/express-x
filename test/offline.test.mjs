@@ -2743,6 +2743,36 @@ describe('Full offline-first client ↔ server protocol', () => {
       }
    })
 
+   test('scoped sync does not push dirty local rows outside the where scope', async () => {
+      const modelName = `model${++dbCounter}`
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
+
+      const { clientApp, cleanup } = await createTestContext(
+         serverApp => serverApp.configure(drizzleOfflinePlugin, db, metaTable, [modelTable]),
+         { useOfflinePlugin: true },
+      )
+
+      try {
+         const model = clientApp.createOfflineModel(modelName, ['label'])
+         await model.db.values.add({ uid: 'out', label: 'closed' })
+         await model.db.metadata.add({ uid: 'out', created_at: T0, __dirty__: true })
+         await model.addSynchroWhere({ label: 'open' })
+
+         await model.synchronizeAll()
+
+         const serverRows = await db.select().from(modelTable)
+         assert.equal(serverRows.length, 0, 'scoped sync must not push dirty rows outside its where predicate')
+
+         const localValue = await model.db.values.get('out')
+         const localMeta = await model.db.metadata.get('out')
+         assert.equal(localValue?.label, 'closed', 'out-of-scope local value should remain local')
+         assert.equal(localMeta?.__dirty__, true, 'out-of-scope metadata should stay dirty for a matching or broad sync')
+      } finally {
+         await cleanup()
+         pglite.close()
+      }
+   })
+
    test('disposing one offline model scope does not remove another active sync scope', async () => {
       const modelName = `model${++dbCounter}`
       const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
