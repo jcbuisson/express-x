@@ -546,6 +546,36 @@ describe('Full offline-first client ↔ server protocol', () => {
       }
    })
 
+   test('newer local tombstone tombstones orphaned live server metadata', async () => {
+      const modelName = `model${++dbCounter}`
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
+
+      await db.insert(metaTable).values({ uid: 'r1', created_at: T0, updated_at: T1 })
+
+      const { clientApp, cleanup } = await createTestContext(
+         serverApp => serverApp.configure(drizzleOfflinePlugin, db, metaTable, [modelTable]),
+         { useOfflinePlugin: true },
+      )
+
+      try {
+         const model = clientApp.createOfflineModel(modelName, ['label'])
+         await model.db.metadata.add({ uid: 'r1', created_at: T0, deleted_at: T2, __dirty__: true })
+         await model.addSynchroWhere({})
+
+         await model.synchronizeAll()
+
+         const rows = await db.select().from(modelTable).where(eq(modelTable.uid, 'r1'))
+         assert.equal(rows.length, 0, 'server row must remain absent')
+         const serverMeta = (await db.select().from(metaTable).where(eq(metaTable.uid, 'r1')))[0]
+         assert.equal(new Date(serverMeta.deleted_at).getTime(), T2.getTime(), 'newer local tombstone should tombstone orphaned server metadata')
+         assert.ok(!await model.db.values.get('r1'), 'local value should remain absent')
+         assert.ok(!await model.db.metadata.get('r1'), 'acknowledged local tombstone should be cleared')
+      } finally {
+         await cleanup()
+         pglite.close()
+      }
+   })
+
    test('direct update newer than server tombstone re-creates server row', async () => {
       const modelName = `model${++dbCounter}`
       const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)

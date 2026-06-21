@@ -103,6 +103,7 @@ export function computeSyncResult(databaseValuesDict, clientMetadataDict, databa
             deleteDatabase.push(uid)
             deleteClient.push([uid, databaseUpdatedAt])
          } else if (clientMetaData.deleted_at) {
+            deleteDatabase.push(uid)
             deleteClient.push([uid, clientMetaData.deleted_at])
          } else {
             addDatabase.push(clientMetaData)

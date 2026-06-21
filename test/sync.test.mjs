@@ -89,6 +89,16 @@ describe('computeSyncResult', () => {
       assert.deepEqual(result.addDatabase, [])
    })
 
+   test('client tombstone newer than server live metadata but row missing → tombstone server metadata too', () => {
+      const clientMeta = { uid: 'n', created_at: T0, deleted_at: T2 }
+      const dbMeta = { uid: 'n', created_at: T0, updated_at: T1 }
+      const result = computeSyncResult({}, { n: clientMeta }, { n: dbMeta })
+      assert.deepEqual(result.deleteDatabase, ['n'])
+      assert.deepEqual(result.deleteClient, [['n', T2]])
+      assert.deepEqual(result.addDatabase, [])
+      assert.deepEqual(result.updateDatabase, [])
+   })
+
    test('record in both, server tombstone newer than client copy → delete stale DB row and client', () => {
       const value = { uid: 'z', label: 'stale-server-row' }
       const clientMeta = { uid: 'z', created_at: T0 }
