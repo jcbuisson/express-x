@@ -3810,6 +3810,48 @@ describe('Full offline-first client ↔ server protocol', () => {
       }
    })
 
+   test('wherePredicate handles persisted Date range bounds consistently with server sync scope', async () => {
+      const modelName = `model${++dbCounter}`
+      const pglite = new PGlite()
+      await pglite.exec(`
+         CREATE TABLE metadata (uid TEXT PRIMARY KEY, created_at TIMESTAMP, updated_at TIMESTAMP, deleted_at TIMESTAMP);
+         CREATE TABLE "${modelName}" (uid TEXT PRIMARY KEY, label TEXT NOT NULL, start TIMESTAMP NOT NULL);
+      `)
+      const db = drizzle(pglite)
+      const metaTable = pgTable('metadata', {
+         uid: text('uid').primaryKey(),
+         created_at: timestamp(), updated_at: timestamp(), deleted_at: timestamp(),
+      })
+      const modelTable = pgTable(modelName, {
+         uid: text('uid').primaryKey(),
+         label: text('label').notNull(),
+         start: timestamp('start').notNull(),
+      })
+
+      const { clientApp, cleanup } = await createTestContext(
+         serverApp => serverApp.configure(drizzleOfflinePlugin, db, metaTable, [modelTable]),
+         { useOfflinePlugin: true },
+      )
+
+      try {
+         const model = clientApp.createOfflineModel(modelName, ['label', 'start'])
+         await model.db.values.add({ uid: 'before', label: 'before-range', start: T0 })
+         await model.db.metadata.add({ uid: 'before', created_at: T0, __dirty__: true })
+
+         const persistedWhere = { start: { gte: T1.toISOString() } }
+         assert.deepEqual(await model.findWhere(persistedWhere), [], 'persisted Date range should not match a Date before the lower bound')
+
+         await model.addSynchroWhere(persistedWhere)
+         await model.synchronizeAll()
+
+         const serverRows = await db.select().from(modelTable)
+         assert.equal(serverRows.length, 0, 'Date-range sync must not push local rows outside a serialized Date lower bound')
+      } finally {
+         await cleanup()
+         pglite.close()
+      }
+   })
+
    test('wherePredicate handles falsy boundary value (lte: 0) correctly', async () => {
       // wherePredicate is used by synchronize() to build clientMetadataDict.
       // A falsy boundary (lte: 0) is checked with `if (value.lte)` which treats 0
