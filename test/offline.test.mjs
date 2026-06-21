@@ -1043,6 +1043,33 @@ describe('Full offline-first client ↔ server protocol', () => {
       }
    })
 
+   test('direct create older than server tombstone removes stale server row', async () => {
+      const modelName = `model${++dbCounter}`
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
+
+      await db.insert(modelTable).values({ uid: 'r1', label: 'stale-server-row' })
+      await db.insert(metaTable).values({ uid: 'r1', created_at: T0, deleted_at: T2 })
+
+      const { clientApp, cleanup } = await createTestContext(
+         serverApp => serverApp.configure(drizzleOfflinePlugin, db, metaTable, [modelTable]),
+         { useOfflinePlugin: true },
+      )
+
+      try {
+         const result = await clientApp.service(modelName).createWithMeta('r1', { label: 'client-old' }, T1)
+         const [returnedValue, returnedMeta] = result
+
+         assert.equal(returnedValue == null, true, 'stale direct create should not return a stale row under tombstone metadata')
+         assert.equal(new Date(returnedMeta.deleted_at).getTime(), T2.getTime())
+
+         const rows = await db.select().from(modelTable).where(eq(modelTable.uid, 'r1'))
+         assert.equal(rows.length, 0, 'server tombstone must delete stale model row')
+      } finally {
+         await cleanup()
+         pglite.close()
+      }
+   })
+
    test('direct create equal to server tombstone does not recreate server row', async () => {
       const modelName = `model${++dbCounter}`
       const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
@@ -1111,6 +1138,51 @@ describe('Full offline-first client ↔ server protocol', () => {
 
          assert.ok(!await model.db.values.get(record.uid), 'optimistic create value should be removed when server returns tombstone')
          assert.ok(!await model.db.metadata.get(record.uid), 'optimistic create metadata should be removed when server returns tombstone')
+      } finally {
+         await cleanup()
+      }
+   })
+
+   test('direct create acknowledgement ignores value when server returns tombstone', async () => {
+      const modelName = `model${++dbCounter}`
+      const futureDelete = new Date(Date.now() + 60_000)
+      let resolveCreateStarted
+      let createRelease
+      const createStarted = new Promise(resolve => { resolveCreateStarted = resolve })
+      const createCanReturn = new Promise(resolve => { createRelease = resolve })
+
+      const { clientApp, cleanup } = await createTestContext(serverApp => {
+         serverApp.createService(modelName, {
+            createWithMeta: async (uid, data) => {
+               resolveCreateStarted()
+               await createCanReturn
+               return [{ uid, ...data }, { uid, created_at: T0, updated_at: null, deleted_at: futureDelete }]
+            },
+            updateWithMeta: async () => {},
+            deleteWithMeta: async () => {},
+            findMany: async () => [],
+         })
+         serverApp.createService('sync', {
+            go: async () => ({ addClient: [], updateClient: [], deleteClient: [], addDatabase: [], updateDatabase: [] }),
+         })
+      }, { useOfflinePlugin: true })
+
+      try {
+         const model = clientApp.createOfflineModel(modelName, ['label'])
+
+         const record = await model.create({ label: 'client-old' })
+         await createStarted
+         createRelease()
+
+         for (let i = 0; i < 50; i++) {
+            const value = await model.db.values.get(record.uid)
+            const meta = await model.db.metadata.get(record.uid)
+            if (!value && !meta) break
+            await new Promise(resolve => setTimeout(resolve, 10))
+         }
+
+         assert.ok(!await model.db.values.get(record.uid), 'tombstone acknowledgement should remove value even if a value is returned')
+         assert.ok(!await model.db.metadata.get(record.uid), 'tombstone acknowledgement should remove metadata even if a value is returned')
       } finally {
          await cleanup()
       }
