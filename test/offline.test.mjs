@@ -1899,6 +1899,35 @@ describe('Full offline-first client ↔ server protocol', () => {
       }
    })
 
+   test('sync repairs visible local value with missing metadata and pushes it to server', async () => {
+      const modelName = `model${++dbCounter}`
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
+
+      const { clientApp, cleanup } = await createTestContext(
+         serverApp => serverApp.configure(drizzleOfflinePlugin, db, metaTable, [modelTable]),
+         { useOfflinePlugin: true },
+      )
+
+      try {
+         const model = clientApp.createOfflineModel(modelName, ['label'])
+         await model.db.values.add({ uid: 'r1', label: 'orphan-local-value' })
+         await model.addSynchroWhere({})
+
+         await model.synchronizeAll()
+
+         const serverRows = await db.select().from(modelTable).where(eq(modelTable.uid, 'r1'))
+         assert.equal(serverRows[0]?.label, 'orphan-local-value', 'sync should push visible local value even when metadata was missing')
+         const serverMeta = (await db.select().from(metaTable).where(eq(metaTable.uid, 'r1')))[0]
+         assert.ok(serverMeta?.created_at, 'sync should create server metadata for repaired local value')
+         const localMeta = await model.db.metadata.get('r1')
+         assert.ok(localMeta?.created_at, 'sync should repair local metadata')
+         assert.equal(localMeta.__dirty__, false, 'repaired local metadata should be clean after server acknowledgement')
+      } finally {
+         await cleanup()
+         pglite.close()
+      }
+   })
+
    test('update() does not create orphan metadata when local value is missing', async () => {
       const modelName = `model${++dbCounter}`
       const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
