@@ -2773,6 +2773,37 @@ describe('Full offline-first client ↔ server protocol', () => {
       }
    })
 
+   test('scoped sync does not delete server rows outside the where scope', async () => {
+      const modelName = `model${++dbCounter}`
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
+
+      await db.insert(modelTable).values({ uid: 'out', label: 'closed' })
+      await db.insert(metaTable).values({ uid: 'out', created_at: T0 })
+
+      const { clientApp, cleanup } = await createTestContext(
+         serverApp => serverApp.configure(drizzleOfflinePlugin, db, metaTable, [modelTable]),
+         { useOfflinePlugin: true },
+      )
+
+      try {
+         const model = clientApp.createOfflineModel(modelName, ['label'])
+         await model.db.values.add({ uid: 'out', label: 'closed', __deleted__: true })
+         await model.db.metadata.add({ uid: 'out', created_at: T0, deleted_at: T2, __dirty__: true })
+         await model.addSynchroWhere({ label: 'open' })
+
+         await model.synchronizeAll()
+
+         const serverRows = await db.select().from(modelTable).where(eq(modelTable.uid, 'out'))
+         assert.equal(serverRows[0]?.label, 'closed', 'scoped sync must not delete server rows outside its where predicate')
+
+         const serverMeta = (await db.select().from(metaTable).where(eq(metaTable.uid, 'out')))[0]
+         assert.ok(!serverMeta.deleted_at, 'out-of-scope server metadata must not be tombstoned')
+      } finally {
+         await cleanup()
+         pglite.close()
+      }
+   })
+
    test('disposing one offline model scope does not remove another active sync scope', async () => {
       const modelName = `model${++dbCounter}`
       const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
