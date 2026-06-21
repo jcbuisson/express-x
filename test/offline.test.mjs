@@ -205,6 +205,32 @@ describe('Full offline-first client ↔ server protocol', () => {
       }
    })
 
+   test('newer local tombstone upgrades older server tombstone on sync', async () => {
+      const modelName = `model${++dbCounter}`
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
+
+      await db.insert(metaTable).values({ uid: 'd1', created_at: T0, deleted_at: T1 })
+
+      const { clientApp, cleanup } = await createTestContext(
+         serverApp => serverApp.configure(drizzleOfflinePlugin, db, metaTable, [modelTable]),
+         { useOfflinePlugin: true },
+      )
+
+      try {
+         const model = clientApp.createOfflineModel(modelName, ['label'])
+         await model.db.metadata.add({ uid: 'd1', created_at: T0, deleted_at: T2, __dirty__: true })
+         await model.addSynchroWhere({})
+         await model.synchronizeAll()
+
+         const serverMeta = (await db.select().from(metaTable).where(eq(metaTable.uid, 'd1')))[0]
+         assert.equal(new Date(serverMeta.deleted_at).getTime(), T2.getTime(), 'server tombstone should be upgraded to newer client tombstone')
+         assert.ok(!await model.db.metadata.get('d1'), 'acknowledged local tombstone should be removed')
+      } finally {
+         await cleanup()
+         pglite.close()
+      }
+   })
+
    test('create() rollback removes metadata when server rejects', async () => {
       const modelName = `model${++dbCounter}`
 
