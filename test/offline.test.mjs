@@ -868,6 +868,35 @@ describe('Full offline-first client ↔ server protocol', () => {
       }
    })
 
+   test('direct delete older than server tombstone removes stale server row', async () => {
+      const modelName = `model${++dbCounter}`
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
+
+      await db.insert(modelTable).values({ uid: 'r1', label: 'stale-server-row' })
+      await db.insert(metaTable).values({ uid: 'r1', created_at: T0, deleted_at: T2 })
+
+      const { clientApp, cleanup } = await createTestContext(
+         serverApp => serverApp.configure(drizzleOfflinePlugin, db, metaTable, [modelTable]),
+         { useOfflinePlugin: true },
+      )
+
+      try {
+         const result = await clientApp.service(modelName).deleteWithMeta('r1', T1)
+         const [returnedValue, returnedMeta] = result
+
+         assert.equal(returnedValue == null, true, 'stale direct delete should not return a stale row under tombstone metadata')
+         assert.equal(new Date(returnedMeta.deleted_at).getTime(), T2.getTime(), 'stale direct delete should return newer tombstone')
+
+         const rows = await db.select().from(modelTable).where(eq(modelTable.uid, 'r1'))
+         assert.equal(rows.length, 0, 'server tombstone must delete stale model row')
+         const serverMeta = (await db.select().from(metaTable).where(eq(metaTable.uid, 'r1')))[0]
+         assert.equal(new Date(serverMeta.deleted_at).getTime(), T2.getTime(), 'server tombstone must not be downgraded')
+      } finally {
+         await cleanup()
+         pglite.close()
+      }
+   })
+
    test('direct delete older than orphaned server metadata tombstones and removes local row', async () => {
       const modelName = `model${++dbCounter}`
       const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
@@ -907,6 +936,53 @@ describe('Full offline-first client ↔ server protocol', () => {
       } finally {
          await cleanup()
          pglite.close()
+      }
+   })
+
+   test('direct delete acknowledgement ignores value when server returns tombstone', async () => {
+      const modelName = `model${++dbCounter}`
+      const futureDelete = new Date(Date.now() + 60_000)
+      let resolveDeleteStarted
+      let deleteRelease
+      const deleteStarted = new Promise(resolve => { resolveDeleteStarted = resolve })
+      const deleteCanReturn = new Promise(resolve => { deleteRelease = resolve })
+
+      const { clientApp, cleanup } = await createTestContext(serverApp => {
+         serverApp.createService(modelName, {
+            deleteWithMeta: async (uid) => {
+               resolveDeleteStarted()
+               await deleteCanReturn
+               return [{ uid, label: 'stale-server-row' }, { uid, created_at: T0, updated_at: null, deleted_at: futureDelete }]
+            },
+            createWithMeta: async () => {},
+            updateWithMeta: async () => {},
+            findMany: async () => [],
+         })
+         serverApp.createService('sync', {
+            go: async () => ({ addClient: [], updateClient: [], deleteClient: [], addDatabase: [], updateDatabase: [] }),
+         })
+      }, { useOfflinePlugin: true })
+
+      try {
+         const model = clientApp.createOfflineModel(modelName, ['label'])
+         await model.db.values.add({ uid: 'r1', label: 'client-old' })
+         await model.db.metadata.add({ uid: 'r1', created_at: T0 })
+
+         await model.remove('r1')
+         await deleteStarted
+         deleteRelease()
+
+         for (let i = 0; i < 50; i++) {
+            const value = await model.db.values.get('r1')
+            const meta = await model.db.metadata.get('r1')
+            if (!value && !meta) break
+            await new Promise(resolve => setTimeout(resolve, 10))
+         }
+
+         assert.ok(!await model.db.values.get('r1'), 'tombstone delete acknowledgement should remove value even if a value is returned')
+         assert.ok(!await model.db.metadata.get('r1'), 'tombstone delete acknowledgement should remove metadata even if a value is returned')
+      } finally {
+         await cleanup()
       }
    })
 
