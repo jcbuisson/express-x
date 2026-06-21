@@ -2311,6 +2311,40 @@ describe('Full offline-first client ↔ server protocol', () => {
       }
    })
 
+   test('remove() does not create tombstone metadata when local value is missing', async () => {
+      const modelName = `model${++dbCounter}`
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
+
+      await db.insert(modelTable).values({ uid: 'missing', label: 'server-row' })
+      await db.insert(metaTable).values({ uid: 'missing', created_at: T0 })
+
+      const { clientApp, cleanup } = await createTestContext(
+         serverApp => serverApp.configure(drizzleOfflinePlugin, db, metaTable, [modelTable]),
+         { useOfflinePlugin: true },
+      )
+
+      try {
+         const model = clientApp.createOfflineModel(modelName, ['label'])
+
+         const result = await model.remove('missing')
+
+         assert.equal(result, undefined, 'remove() should no-op when the local value is missing')
+         assert.ok(!await model.db.metadata.get('missing'), 'remove() must not create dirty tombstone metadata without a value')
+
+         await model.addSynchroWhere({})
+         await model.synchronizeAll()
+
+         const serverRows = await db.select().from(modelTable).where(eq(modelTable.uid, 'missing'))
+         assert.equal(serverRows[0]?.label, 'server-row', 'missing local remove must not delete the server row')
+
+         const localValue = await model.db.values.get('missing')
+         assert.equal(localValue?.label, 'server-row', 'sync should pull the still-live server row')
+      } finally {
+         await cleanup()
+         pglite.close()
+      }
+   })
+
    test('app-event for unregistered type is silently ignored, not TypeError', async () => {
       // When an app-event arrives for a type with no registered handler,
       // type2appHandler[type] is undefined.  The guard
