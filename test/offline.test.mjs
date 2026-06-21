@@ -1899,6 +1899,35 @@ describe('Full offline-first client ↔ server protocol', () => {
       }
    })
 
+   test('update() does not create orphan metadata when local value is missing', async () => {
+      const modelName = `model${++dbCounter}`
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
+
+      const { clientApp, cleanup } = await createTestContext(
+         serverApp => serverApp.configure(drizzleOfflinePlugin, db, metaTable, [modelTable]),
+         { useOfflinePlugin: true },
+      )
+
+      try {
+         const model = clientApp.createOfflineModel(modelName, ['label'])
+
+         const result = await model.update('missing', { label: 'client-new' })
+
+         assert.equal(result, undefined, 'update() should no-op when the local value is missing')
+         assert.ok(!await model.db.metadata.get('missing'), 'update() must not create dirty metadata without a value')
+
+         await model.addSynchroWhere({})
+         await model.synchronizeAll()
+
+         assert.ok(!await model.db.metadata.get('missing'), 'sync should not leave orphan metadata for missing update')
+         const serverRows = await db.select().from(modelTable).where(eq(modelTable.uid, 'missing'))
+         assert.equal(serverRows.length, 0, 'missing local update must not create a server row')
+      } finally {
+         await cleanup()
+         pglite.close()
+      }
+   })
+
    test('app-event for unregistered type is silently ignored, not TypeError', async () => {
       // When an app-event arrives for a type with no registered handler,
       // type2appHandler[type] is undefined.  The guard
