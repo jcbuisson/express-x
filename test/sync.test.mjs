@@ -60,6 +60,15 @@ describe('computeSyncResult', () => {
       assert.deepEqual(result.updateDatabase, [])
    })
 
+   test('record only in DB with tombstone metadata → delete stale DB row, do not add client', () => {
+      const value = { uid: 'd', label: 'stale-server-row' }
+      const dbTombstone = { uid: 'd', created_at: T0, deleted_at: T1 }
+      const result = computeSyncResult({ d: value }, {}, { d: dbTombstone })
+      assert.deepEqual(result.deleteDatabase, ['d'])
+      assert.deepEqual(result.addClient, [])
+      assert.deepEqual(result.updateClient, [])
+   })
+
    test('client update newer than server tombstone → recreate database', () => {
       const clientMeta = { uid: 'y', created_at: T0, updated_at: T2 }
       const dbTombstone = { uid: 'y', created_at: T0, deleted_at: T1 }
