@@ -1797,6 +1797,38 @@ describe('Full offline-first client ↔ server protocol', () => {
       }
    })
 
+   test('update() creates dirty metadata when local metadata is missing', async () => {
+      const modelName = `model${++dbCounter}`
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
+
+      const { clientApp, cleanup } = await createTestContext(
+         serverApp => serverApp.configure(drizzleOfflinePlugin, db, metaTable, [modelTable]),
+         { useOfflinePlugin: true },
+      )
+
+      try {
+         const model = clientApp.createOfflineModel(modelName, ['label'])
+         await model.db.values.add({ uid: 'r1', label: 'orphan-local-value' })
+
+         await model.update('r1', { label: 'client-new' })
+
+         let localMeta = await model.db.metadata.get('r1')
+         assert.ok(localMeta?.updated_at, 'update() must create dirty metadata when metadata is missing')
+         assert.equal(localMeta.__dirty__, true)
+
+         await model.addSynchroWhere({})
+         await model.synchronizeAll()
+
+         const serverRows = await db.select().from(modelTable).where(eq(modelTable.uid, 'r1'))
+         assert.equal(serverRows[0]?.label, 'client-new', 'sync should push updated orphan value to server')
+         localMeta = await model.db.metadata.get('r1')
+         assert.equal(localMeta.__dirty__, false, 'sync should mark pushed update clean')
+      } finally {
+         await cleanup()
+         pglite.close()
+      }
+   })
+
    test('app-event for unregistered type is silently ignored, not TypeError', async () => {
       // When an app-event arrives for a type with no registered handler,
       // type2appHandler[type] is undefined.  The guard
