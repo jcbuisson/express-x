@@ -244,6 +244,11 @@ export function expressX(config) {
       socket.on('client-request', async ({ name, action, args }, ack) => {
          const trimmedArgs = args ? JSON.stringify(args).slice(0, 300) : ''
          app.log('verbose', `client-request ${name} ${action} ${trimmedArgs}`)
+         const respond = (payload) => {
+            if (typeof ack === 'function') ack(payload)
+            else app.log('verbose', `client-request ${name} ${action} missing acknowledgment callback`)
+         }
+
          if (name in services) {
             const service = services[name]
             try {
@@ -264,11 +269,11 @@ export function expressX(config) {
 
                      const trimmedResult = result ? JSON.stringify(result).slice(0, 300) : ''
                      app.log('verbose', `client-response ${trimmedResult}`)
-                     ack({ result })
+                     respond({ result })
                   } catch(err) {
                      console.log('!!!!!!error', 'name', name, 'action', action, 'args', args, 'err.code', err.code, 'err.message', err.message)
                      app.log('verbose', err.stack)
-                     ack({
+                     respond({
                         error: {
                            code: err.code || 'unknown-error',
                            message: err.message,
@@ -277,7 +282,7 @@ export function expressX(config) {
                      })
                   }
                } else {
-                  ack({
+                  respond({
                      error: {
                         code: 'missing-method',
                         message: `there is no method named '${action}' for service '${name}'`,
@@ -287,7 +292,7 @@ export function expressX(config) {
             } catch(err) {
                console.log('err', err)
                app.log('verbose', err.stack)
-               ack({
+               respond({
                   error: {
                      code: err.code || 'unknown-error',
                      message: err.message,
@@ -296,7 +301,7 @@ export function expressX(config) {
                })
             }
          } else {
-            ack({
+            respond({
                error: {
                   code: 'missing-service',
                   message: `there is no service named '${name}'`,

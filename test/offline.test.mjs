@@ -15,7 +15,7 @@ import { drizzle } from 'drizzle-orm/pglite'
 import { pgTable, text, timestamp, integer } from 'drizzle-orm/pg-core'
 import { eq } from 'drizzle-orm'
 
-import { expressX, computeSyncResult } from '@jcbuisson/express-x'
+import { expressX, computeSyncResult } from '#root/src/server.mjs'
 import { createClient, offlinePlugin } from '@jcbuisson/express-x-client'
 
 import { drizzleOfflinePlugin } from '@jcbuisson/express-x-drizzle'
@@ -86,7 +86,7 @@ async function createTestContext(registerServices, { useOfflinePlugin = false } 
       serverApp.io.close(resolve)
    })
 
-   return { clientApp, cleanup }
+   return { clientApp, socket, cleanup }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -123,6 +123,27 @@ describe('Full offline-first client ↔ server protocol', () => {
                return true
             },
          )
+      } finally {
+         await cleanup()
+      }
+   })
+
+   test('client-request without acknowledgment callback does not throw on server error', async () => {
+      const { socket, cleanup } = await createTestContext(serverApp => {
+         serverApp.createService('broken', {
+            explode: async () => { throw new Error('something went wrong') },
+         })
+      })
+
+      try {
+         socket.emit('client-request', {
+            name: 'broken',
+            action: 'explode',
+            args: [],
+         })
+
+         await new Promise(resolve => setTimeout(resolve, 20))
+         assert.equal(socket.connected, true)
       } finally {
          await cleanup()
       }

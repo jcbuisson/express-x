@@ -42,7 +42,7 @@ No build step — the source is run directly as ES modules.
 - `src/server.mjs` — complete server-side framework; all exports live here.
 
 ### Related Packages (also authored here, published separately)
-- **`@jcbuisson/express-x-client`** (`node_modules/@jcbuisson/express-x-client/src/client.mts`) — published client library: `createClient`, `offlinePlugin`, `Mutex`, `wherePredicate`.
+- **`@jcbuisson/express-x-client`** (`node_modules/@jcbuisson/express-x-client/src/client.js`) — published client library: `createClient`, `offlinePlugin`, `Mutex`, `wherePredicate`.
 - **`@jcbuisson/express-x-drizzle`** (`node_modules/@jcbuisson/express-x-drizzle/src/drizzle-plugins.mjs`) — Drizzle ORM offline plugin. The installed version may lag behind local development; tests wire it via `serverApp.configure(drizzleOfflinePlugin, ...)`.
 
 ### Core Concepts

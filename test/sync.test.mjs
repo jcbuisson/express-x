@@ -8,7 +8,7 @@ const T1 = new Date('2026-01-02T00:00:00Z')
 const T2 = new Date('2026-01-03T00:00:00Z')
 
 // ─── Dialog helpers ────────────────────────────────────────────────────────────
-// Lightweight simulations of server (drizzle-plugins.mjs) and client (client.mts)
+// Lightweight simulations of server (drizzle-plugins.mjs) and client (client.js)
 // that run the sync protocol using plain objects instead of Dexie / PostgreSQL.
 
 function matchesWhere(value, where) {
