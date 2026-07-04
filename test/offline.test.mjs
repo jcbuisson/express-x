@@ -17,8 +17,10 @@ import { eq } from 'drizzle-orm'
 
 import { expressX, computeSyncResult } from '#root/src/server.mjs'
 import { createClient, offlinePlugin } from '@jcbuisson/express-x-client'
+import { offlinePlugin as localOfflinePlugin } from '../../express-x-client/src/client.js'
 
 import { drizzleOfflinePlugin } from '@jcbuisson/express-x-drizzle'
+import { drizzleOfflinePlugin as localDrizzleOfflinePlugin } from '../../express-x-drizzle/src/drizzle-plugins.mjs'
 
 const T0 = new Date('2026-01-01T00:00:00Z')
 const T1 = new Date('2026-01-02T00:00:00Z')
@@ -60,7 +62,7 @@ async function createTestDb(modelName) {
 
 // ─── Test context helper ──────────────────────────────────────────────────────
 
-async function createTestContext(registerServices, { useOfflinePlugin = false } = {}) {
+async function createTestContext(registerServices, { useOfflinePlugin = false, offlinePluginImpl = offlinePlugin } = {}) {
    const serverApp = expressX({})
    registerServices(serverApp)
 
@@ -73,7 +75,7 @@ async function createTestContext(registerServices, { useOfflinePlugin = false } 
    })
 
    const clientApp = createClient(socket, { debug: false })
-   if (useOfflinePlugin) offlinePlugin(clientApp)
+   if (useOfflinePlugin) offlinePluginImpl(clientApp)
 
    socket.connect()
    await new Promise((resolve, reject) => {
@@ -3998,6 +4000,158 @@ describe('Full offline-first client ↔ server protocol', () => {
          assert.ok( uids.includes('zero'), 'score=0  should match { lte: 0 }')
       } finally {
          await cleanup()
+         pglite.close()
+      }
+   })
+
+   test('failed addDatabase push remains dirty for retry', async () => {
+      const modelName = `model${++dbCounter}`
+      const { clientApp, cleanup } = await createTestContext(serverApp => {
+         serverApp.createService(modelName, {
+            createWithMeta: async () => { throw new Error('temporary failure') },
+         })
+         serverApp.createService('sync', {
+            go: async (_modelName, _where, metadata) => ({
+               addClient: [], updateClient: [], deleteClient: [],
+               addDatabase: [metadata.r1], updateDatabase: [],
+            }),
+         })
+      }, { useOfflinePlugin: true, offlinePluginImpl: localOfflinePlugin })
+
+      try {
+         const model = clientApp.createOfflineModel(modelName, ['label'])
+         await model.db.values.add({ uid: 'r1', label: 'offline' })
+         await model.db.metadata.add({ uid: 'r1', created_at: T1, __dirty__: true })
+         await model.addSynchroWhere({})
+         await model.synchronizeAll()
+
+         assert.equal((await model.db.values.get('r1'))?.label, 'offline')
+         assert.equal((await model.db.metadata.get('r1'))?.__dirty__, true)
+      } finally {
+         await cleanup()
+      }
+   })
+
+   test('failed remove restores the preceding dirty mutation', async () => {
+      const modelName = `model${++dbCounter}`
+      const { clientApp, cleanup } = await createTestContext(serverApp => {
+         serverApp.createService(modelName, {
+            deleteWithMeta: async () => { throw new Error('temporary failure') },
+         })
+      }, { useOfflinePlugin: true, offlinePluginImpl: localOfflinePlugin })
+
+      try {
+         const model = clientApp.createOfflineModel(modelName, ['label'])
+         await model.db.values.add({ uid: 'r1', label: 'pending update' })
+         await model.db.metadata.add({ uid: 'r1', created_at: T0, updated_at: T1, __dirty__: true })
+         await model.remove('r1')
+
+         for (let i = 0; i < 50 && (await model.db.values.get('r1'))?.__deleted__; i++) {
+            await new Promise(resolve => setTimeout(resolve, 10))
+         }
+
+         assert.equal((await model.db.values.get('r1'))?.__deleted__ ?? null, null)
+         const meta = await model.db.metadata.get('r1')
+         assert.equal(new Date(meta.updated_at).getTime(), T1.getTime())
+         assert.equal(meta.__dirty__, true)
+      } finally {
+         await cleanup()
+      }
+   })
+
+   test('successive local mutations always receive increasing timestamps', async () => {
+      const modelName = `model${++dbCounter}`
+      const { clientApp, cleanup } = await createTestContext(
+         () => {},
+         { useOfflinePlugin: true, offlinePluginImpl: localOfflinePlugin },
+      )
+
+      try {
+         clientApp.isConnected = false
+         const model = clientApp.createOfflineModel(modelName, ['label'])
+         const future = new Date(Date.now() + 60_000)
+         await model.db.values.add({ uid: 'r1', label: 'initial' })
+         await model.db.metadata.add({ uid: 'r1', created_at: T0, updated_at: future, __dirty__: true })
+
+         await model.update('r1', { label: 'first' })
+         const first = await model.db.metadata.get('r1')
+         await model.update('r1', { label: 'second' })
+         const second = await model.db.metadata.get('r1')
+
+         assert.ok(new Date(first.updated_at) > future)
+         assert.ok(new Date(second.updated_at) > new Date(first.updated_at))
+      } finally {
+         await cleanup()
+      }
+   })
+
+   test('observable unsubscribe releases its persisted synchronization scope', async () => {
+      const modelName = `model${++dbCounter}`
+      const { clientApp, cleanup } = await createTestContext(
+         () => {},
+         { useOfflinePlugin: true, offlinePluginImpl: localOfflinePlugin },
+      )
+
+      try {
+         clientApp.isConnected = false
+         const model = clientApp.createOfflineModel(modelName, ['label'])
+         const subscription = model.getObservable({ label: 'open' }).subscribe(() => {})
+
+         for (let i = 0; i < 50 && (await model.db.whereList.count()) === 0; i++) {
+            await new Promise(resolve => setTimeout(resolve, 10))
+         }
+         assert.equal(await model.db.whereList.count(), 1)
+
+         subscription.unsubscribe()
+         for (let i = 0; i < 50 && (await model.db.whereList.count()) !== 0; i++) {
+            await new Promise(resolve => setTimeout(resolve, 10))
+         }
+         assert.equal(await model.db.whereList.count(), 0)
+      } finally {
+         await cleanup()
+      }
+   })
+
+   test('reset clears cached records but preserves active synchronization scopes', async () => {
+      const modelName = `model${++dbCounter}`
+      const { clientApp, cleanup } = await createTestContext(
+         () => {},
+         { useOfflinePlugin: true, offlinePluginImpl: localOfflinePlugin },
+      )
+
+      try {
+         const model = clientApp.createOfflineModel(modelName, ['label'])
+         await model.addSynchroWhere({ label: 'open' })
+         await model.db.values.add({ uid: 'r1', label: 'open' })
+         await model.db.metadata.add({ uid: 'r1', created_at: T0 })
+
+         await model.reset()
+
+         assert.equal(await model.db.values.count(), 0)
+         assert.equal(await model.db.metadata.count(), 0)
+         assert.deepEqual(
+            (await model.db.whereList.toArray()).map(row => row.sortedjson),
+            ['{"label":"open"}'],
+         )
+      } finally {
+         await cleanup()
+      }
+   })
+
+   test('local Drizzle plugin rejects invalid mutation timestamps', async () => {
+      const modelName = `model${++dbCounter}`
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
+      const serverApp = expressX({})
+      serverApp.configure(localDrizzleOfflinePlugin, db, metaTable, [modelTable])
+
+      try {
+         await assert.rejects(
+            serverApp.service(modelName).createWithMeta('r1', { label: 'invalid' }, 'not-a-date'),
+            /valid timestamp/,
+         )
+         assert.equal((await db.select().from(modelTable)).length, 0)
+      } finally {
+         await new Promise(resolve => serverApp.io.close(resolve))
          pglite.close()
       }
    })

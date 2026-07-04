@@ -58,6 +58,8 @@ export class Mutex {
 // pruning mechanism in the framework.
 
 export function computeSyncResult(databaseValuesDict, clientMetadataDict, databaseMetadataDict) {
+   assertValidMetadataTimestamps(clientMetadataDict, 'client')
+   assertValidMetadataTimestamps(databaseMetadataDict, 'database')
    const onlyDatabaseIds = new Set()
    const onlyClientIds = new Set()
    const databaseAndClientIds = new Set()
@@ -157,6 +159,24 @@ export function computeSyncResult(databaseValuesDict, clientMetadataDict, databa
       addDatabase,
       updateDatabase,
       deleteDatabase,
+   }
+}
+
+function assertValidMetadataTimestamps(metadataDict, source) {
+   if (!metadataDict || typeof metadataDict !== 'object' || Array.isArray(metadataDict)) {
+      throw new TypeError(`${source} metadata must be an object`)
+   }
+   for (const [uid, metadata] of Object.entries(metadataDict)) {
+      if (!metadata || typeof metadata !== 'object') {
+         throw new TypeError(`${source} metadata for '${uid}' must be an object`)
+      }
+      for (const field of ['created_at', 'updated_at', 'deleted_at']) {
+         const value = metadata[field]
+         if (value == null) continue
+         if (Number.isNaN(new Date(value).getTime())) {
+            throw new TypeError(`${source} metadata '${uid}.${field}' must be a valid timestamp`)
+         }
+      }
    }
 }
 
