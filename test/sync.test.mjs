@@ -213,4 +213,17 @@ describe('computeSyncResult', () => {
       assert.deepEqual(result.deleteDatabase, [])
    })
 
+   test('special uid keys do not corrupt synchronization dictionaries', () => {
+      const databaseValues = Object.create(null)
+      const databaseMetadata = Object.create(null)
+      const clientMetadata = Object.create(null)
+      databaseValues.__proto__ = { uid: '__proto__', label: 'safe' }
+      databaseMetadata.__proto__ = { uid: '__proto__', created_at: T0 }
+
+      const result = computeSyncResult(databaseValues, clientMetadata, databaseMetadata)
+
+      assert.equal(result.addClient.length, 1)
+      assert.equal(result.addClient[0][0].uid, '__proto__')
+   })
+
 })

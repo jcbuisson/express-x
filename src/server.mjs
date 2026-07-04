@@ -64,12 +64,12 @@ export function computeSyncResult(databaseValuesDict, clientMetadataDict, databa
    const onlyClientIds = new Set()
    const databaseAndClientIds = new Set()
 
-   for (const uid in databaseValuesDict) {
-      if (uid in clientMetadataDict) databaseAndClientIds.add(uid)
+   for (const uid of Object.keys(databaseValuesDict)) {
+      if (Object.hasOwn(clientMetadataDict, uid)) databaseAndClientIds.add(uid)
       else onlyDatabaseIds.add(uid)
    }
-   for (const uid in clientMetadataDict) {
-      if (uid in databaseValuesDict) databaseAndClientIds.add(uid)
+   for (const uid of Object.keys(clientMetadataDict)) {
+      if (Object.hasOwn(databaseValuesDict, uid)) databaseAndClientIds.add(uid)
       else onlyClientIds.add(uid)
    }
 

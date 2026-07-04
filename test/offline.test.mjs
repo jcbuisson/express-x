@@ -9,18 +9,18 @@ import { test, describe, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { io as ioc } from 'socket.io-client'
 import { firstValueFrom } from 'rxjs'
-import { effectScope } from 'vue'
+import { effectScope } from '../../express-x-client/node_modules/vue/index.mjs'
 import { PGlite } from '@electric-sql/pglite'
 import { drizzle } from 'drizzle-orm/pglite'
 import { pgTable, text, timestamp, integer } from 'drizzle-orm/pg-core'
 import { eq } from 'drizzle-orm'
 
 import { expressX, computeSyncResult } from '#root/src/server.mjs'
-import { createClient, offlinePlugin } from '@jcbuisson/express-x-client'
-import { offlinePlugin as localOfflinePlugin } from '../../express-x-client/src/client.js'
+import { createClient, offlinePlugin } from '../../express-x-client/src/client.js'
+const localOfflinePlugin = offlinePlugin
 
-import { drizzleOfflinePlugin } from '@jcbuisson/express-x-drizzle'
-import { drizzleOfflinePlugin as localDrizzleOfflinePlugin } from '../../express-x-drizzle/src/drizzle-plugins.mjs'
+import { drizzleOfflinePlugin } from '../../express-x-drizzle/src/drizzle-plugins.mjs'
+const localDrizzleOfflinePlugin = drizzleOfflinePlugin
 
 const T0 = new Date('2026-01-01T00:00:00Z')
 const T1 = new Date('2026-01-02T00:00:00Z')
@@ -4153,6 +4153,41 @@ describe('Full offline-first client ↔ server protocol', () => {
       } finally {
          await new Promise(resolve => serverApp.io.close(resolve))
          pglite.close()
+      }
+   })
+
+   test('create ignores caller-controlled uid and internal deletion marker', async () => {
+      const modelName = `model${++dbCounter}`
+      const { clientApp, cleanup } = await createTestContext(() => {}, { useOfflinePlugin: true })
+
+      try {
+         clientApp.isConnected = false
+         const model = clientApp.createOfflineModel(modelName, ['label'])
+         const value = await model.create({ uid: 'attacker', label: 'safe', __deleted__: true })
+
+         assert.notEqual(value.uid, 'attacker')
+         assert.equal(value.__deleted__, undefined)
+         assert.equal((await model.db.metadata.get(value.uid))?.uid, value.uid)
+      } finally {
+         await cleanup()
+      }
+   })
+
+   test('malformed create acknowledgement leaves the local mutation dirty', async () => {
+      const modelName = `model${++dbCounter}`
+      const { clientApp, cleanup } = await createTestContext(serverApp => {
+         serverApp.createService(modelName, { createWithMeta: async () => undefined })
+      }, { useOfflinePlugin: true })
+
+      try {
+         const model = clientApp.createOfflineModel(modelName, ['label'])
+         const value = await model.create({ label: 'keep' })
+         await new Promise(resolve => setTimeout(resolve, 20))
+
+         assert.equal((await model.db.values.get(value.uid))?.label, 'keep')
+         assert.equal((await model.db.metadata.get(value.uid))?.__dirty__, true)
+      } finally {
+         await cleanup()
       }
    })
 
