@@ -2,6 +2,7 @@ import express from "express"
 import { createServer } from "http"
 import { Server } from "socket.io"
 import bcrypt from 'bcryptjs'
+import { randomUUID } from 'node:crypto'
 
 
 
@@ -170,7 +171,14 @@ function assertValidMetadataTimestamps(metadataDict, source) {
       if (!metadata || typeof metadata !== 'object') {
          throw new TypeError(`${source} metadata for '${uid}' must be an object`)
       }
-      for (const field of ['created_at', 'updated_at', 'deleted_at']) {
+      if (metadata.uid !== uid) {
+         throw new TypeError(`${source} metadata key '${uid}' does not match uid '${metadata.uid}'`)
+      }
+      const timestampFields = ['created_at', 'updated_at', 'deleted_at']
+      if (!timestampFields.some(field => metadata[field] != null)) {
+         throw new TypeError(`${source} metadata '${uid}' must contain a timestamp`)
+      }
+      for (const field of timestampFields) {
          const value = metadata[field]
          if (value == null) continue
          if (Number.isNaN(new Date(value).getTime())) {
@@ -184,7 +192,7 @@ function assertValidMetadataTimestamps(metadataDict, source) {
 
 export function expressX(config) {
 
-   const services = {}
+   const services = new Map()
    const socketConnectListeners = []
    const socketDisconnectingListeners = []
    const socketDisconnectListeners = []
@@ -261,16 +269,24 @@ export function expressX(config) {
       * Handle websocket client request
       * Respond via socket.io acknowledgment callback
       */
-      socket.on('client-request', async ({ name, action, args }, ack) => {
-         const trimmedArgs = args ? JSON.stringify(args).slice(0, 300) : ''
-         app.log('verbose', `client-request ${name} ${action} ${trimmedArgs}`)
+      socket.on('client-request', async (request, ack) => {
          const respond = (payload) => {
             if (typeof ack === 'function') ack(payload)
-            else app.log('verbose', `client-request ${name} ${action} missing acknowledgment callback`)
+            else app.log('verbose', 'client-request missing acknowledgment callback')
          }
+         if (!request || typeof request !== 'object'
+            || typeof request.name !== 'string'
+            || typeof request.action !== 'string'
+            || !Array.isArray(request.args)) {
+            respond({ error: { code: 'invalid-request', message: 'invalid client request envelope' } })
+            return
+         }
+         const { name, action, args } = request
+         const trimmedArgs = args ? JSON.stringify(args).slice(0, 300) : ''
+         app.log('verbose', `client-request ${name} ${action} ${trimmedArgs}`)
 
-         if (name in services) {
-            const service = services[name]
+         if (services.has(name)) {
+            const service = services.get(name)
             try {
                const serviceMethod = service['__' + action]
                if (serviceMethod) {
@@ -336,10 +352,10 @@ export function expressX(config) {
     * create a service `name` with given `methods`
     */
    function createService(name, methods) {
-      const service = { _name: name }
+      if (typeof name !== 'string' || !name) throw new TypeError('service name must be a non-empty string')
+      const service = Object.assign(Object.create(null), { _name: name })
 
-      for (const methodName in methods) {
-         const method = methods[methodName]
+      for (const [methodName, method] of Object.entries(methods ?? {})) {
          if (!(method instanceof Function)) continue
 
          // `context` is the context of execution (transport type, connection, app)
@@ -417,7 +433,7 @@ export function expressX(config) {
       }
 
       // cache service in `services`
-      services[name] = service
+      services.set(name, service)
       return service
    }
 
@@ -428,7 +444,7 @@ export function expressX(config) {
    // `app.service(name)` starts here!
    function service(name) {
       // get service from `services` cache
-      if (name in services) return services[name]
+      if (services.has(name)) return services.get(name)
       throw new EXError('missing-service', `there is no service named '${name}'`)
    }
 
@@ -511,44 +527,63 @@ export const protect = (field) => (context) => {
 
 //////////////////////////       RELOAD PLUGIN       //////////////////////////
 
-export const roomCache = {}
-export const dataCache = {}
+export const roomCache = new WeakMap()
+export const dataCache = new WeakMap()
 
 
 export async function reloadPlugin(app) {
 
    const io = app.get('io')
+   const transferTtlMs = app.get('config')?.reloadTransferTtlMs ?? 2 * 60 * 1000
+   const rooms = Object.create(null)
+   const data = Object.create(null)
+   const transferTokens = Object.create(null)
+   const transferExpiryTimers = Object.create(null)
+   roomCache.set(app, rooms)
+   dataCache.set(app, data)
 
    app.addDisconnectingListener((socket, reason) => {
       console.log('onSocketDisconnecting', socket.id, reason)
       // save socket data & rooms in caches
-      const alreadySavedData = dataCache[socket.id]
-      const alreadySavedRooms = roomCache[socket.id]
+      const alreadySavedData = data[socket.id]
+      const alreadySavedRooms = rooms[socket.id]
 
       // Current socket.data takes precedence over stale cached data so that any
       // updates made between disconnections are not overwritten.
-      dataCache[socket.id] = Object.assign({}, alreadySavedData, socket.data)
-      roomCache[socket.id] = new Set(socket.rooms)
-      if (alreadySavedRooms) for (const room of alreadySavedRooms) roomCache[socket.id].add(room)
+      data[socket.id] = Object.assign({}, alreadySavedData, socket.data)
+      rooms[socket.id] = new Set(socket.rooms)
+      if (alreadySavedRooms) for (const room of alreadySavedRooms) rooms[socket.id].add(room)
+      transferTokens[socket.id] = socket.data.__cnxTransferToken
+      clearTimeout(transferExpiryTimers[socket.id])
+      transferExpiryTimers[socket.id] = setTimeout(() => {
+         delete rooms[socket.id]
+         delete data[socket.id]
+         delete transferTokens[socket.id]
+         delete transferExpiryTimers[socket.id]
+      }, transferTtlMs)
+      transferExpiryTimers[socket.id].unref?.()
    })
 
    app.addConnectListener((socket) => {
       console.log('onSocketConnect', socket.id)
+      const transferToken = randomUUID()
+      socket.data.__cnxTransferToken = transferToken
+      socket.emit('cnx-transfer-token', transferToken)
    
       // when client ask for transfer from fromSocketId to toSocketId
-      socket.on('cnx-transfer', async (fromSocketId, toSocketId) => {
+      socket.on('cnx-transfer', async (fromSocketId, toSocketId, claimedToken) => {
          app.log('verbose', `cnx-transfer from ${fromSocketId} to ${toSocketId}`)
          // A socket may only claim its own ID as the destination — prevent session hijacking
-         if (toSocketId !== socket.id) {
+         if (toSocketId !== socket.id || typeof claimedToken !== 'string'
+            || transferTokens[fromSocketId] !== claimedToken) {
             app.log('verbose', `cnx-transfer rejected: toSocketId ${toSocketId} !== socket.id ${socket.id}`)
+            socket.emit('cnx-transfer-error', fromSocketId, toSocketId)
             return
          }
-         console.log('dataCache', dataCache)
-         console.log('roomCache', roomCache)
          // copy connection room & data from 'fromSocketId' to 'toSocketId'
          const toSocket = io.sockets.sockets.get(toSocketId)
          // data & rooms of fromSocketId are taken from dataCache and roomCache, since socket no longer exists
-         const fromSocketRooms = roomCache[fromSocketId]
+         const fromSocketRooms = rooms[fromSocketId]
          if (toSocket && fromSocketRooms) {
             // copy rooms
             for (const room of fromSocketRooms) {
@@ -556,12 +591,19 @@ export async function reloadPlugin(app) {
                toSocket.join(room)
             }
             // copy data
-            toSocket.data = dataCache[fromSocketId]
+            toSocket.data = {
+               ...data[fromSocketId],
+               ...toSocket.data,
+               __cnxTransferToken: transferToken,
+            }
             // console.log('cnx-transfer data', toSocket.data)
             // console.log('cnx-transfer rooms', toSocket.rooms)
             // remove 'from' cache data
-            delete roomCache[fromSocketId]
-            delete dataCache[fromSocketId]
+            delete rooms[fromSocketId]
+            delete data[fromSocketId]
+            delete transferTokens[fromSocketId]
+            clearTimeout(transferExpiryTimers[fromSocketId])
+            delete transferExpiryTimers[fromSocketId]
             // send acknowlegment to toSocket
             toSocket.emit('cnx-transfer-ack', fromSocketId, toSocketId)
          } else {

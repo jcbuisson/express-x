@@ -110,6 +110,31 @@ describe('Full offline-first client ↔ server protocol', () => {
       }
    })
 
+   test('prototype-like service and method names are routed safely', async () => {
+      const { clientApp, cleanup } = await createTestContext(serverApp => {
+         serverApp.createService('constructor', {
+            toString: async () => 'safe',
+         })
+      })
+
+      try {
+         assert.equal(await clientApp.service('constructor').call('toString'), 'safe')
+      } finally {
+         await cleanup()
+      }
+   })
+
+   test('malformed client request receives a structured error', async () => {
+      const { socket, cleanup } = await createTestContext(() => {})
+
+      try {
+         const response = await socket.timeout(1000).emitWithAck('client-request', null)
+         assert.equal(response.error?.code, 'invalid-request')
+      } finally {
+         await cleanup()
+      }
+   })
+
    test('server error is propagated to the client as a rejection', async () => {
       const { clientApp, cleanup } = await createTestContext(serverApp => {
          serverApp.createService('broken', {
@@ -4186,6 +4211,95 @@ describe('Full offline-first client ↔ server protocol', () => {
 
          assert.equal((await model.db.values.get(value.uid))?.label, 'keep')
          assert.equal((await model.db.metadata.get(value.uid))?.__dirty__, true)
+      } finally {
+         await cleanup()
+      }
+   })
+
+   test('mismatched sync tuple is rejected before changing the cache', async () => {
+      const modelName = `model${++dbCounter}`
+      const { clientApp, cleanup } = await createTestContext(serverApp => {
+         serverApp.createService(modelName, {})
+         serverApp.createService('sync', {
+            go: async () => ({
+               addClient: [[
+                  { uid: 'value-id', label: 'bad' },
+                  { uid: 'metadata-id', created_at: T0 },
+               ]],
+               updateClient: [],
+               deleteClient: [],
+               addDatabase: [],
+               updateDatabase: [],
+            }),
+         })
+      }, { useOfflinePlugin: true })
+
+      try {
+         const model = clientApp.createOfflineModel(modelName, ['label'])
+         await model.addSynchroWhere({})
+         await assert.rejects(() => model.synchronizeAll(), /uid/)
+         assert.equal(await model.db.values.count(), 0)
+         assert.equal(await model.db.metadata.count(), 0)
+      } finally {
+         await cleanup()
+      }
+   })
+
+   test('non-JSON-safe synchronization filters are rejected', async () => {
+      const modelName = `model${++dbCounter}`
+      const { clientApp, cleanup } = await createTestContext(() => {}, { useOfflinePlugin: true })
+
+      try {
+         const model = clientApp.createOfflineModel(modelName, ['label'])
+         assert.throws(() => model.addSynchroWhere({ tenant: undefined }), /non-serializable/)
+         assert.throws(() => model.addSynchroWhere({ score: Number.NaN }), /non-finite/)
+         assert.equal(await model.db.whereList.count(), 0)
+      } finally {
+         await cleanup()
+      }
+   })
+
+   test('timestamp-free acknowledgement leaves mutation dirty', async () => {
+      const modelName = `model${++dbCounter}`
+      const { clientApp, cleanup } = await createTestContext(serverApp => {
+         serverApp.createService(modelName, {
+            createWithMeta: async (uid, data) => [{ uid, ...data }, { uid }],
+         })
+      }, { useOfflinePlugin: true })
+
+      try {
+         const model = clientApp.createOfflineModel(modelName, ['label'])
+         const value = await model.create({ label: 'keep' })
+         await new Promise(resolve => setTimeout(resolve, 20))
+         assert.equal((await model.db.metadata.get(value.uid))?.__dirty__, true)
+      } finally {
+         await cleanup()
+      }
+   })
+
+   test('server values cannot inject the internal deletion marker', async () => {
+      const modelName = `model${++dbCounter}`
+      const { clientApp, cleanup } = await createTestContext(serverApp => {
+         serverApp.createService(modelName, {})
+         serverApp.createService('sync', {
+            go: async () => ({
+               addClient: [[
+                  { uid: 'r1', label: 'visible', __deleted__: true },
+                  { uid: 'r1', created_at: T0 },
+               ]],
+               updateClient: [],
+               deleteClient: [],
+               addDatabase: [],
+               updateDatabase: [],
+            }),
+         })
+      }, { useOfflinePlugin: true })
+
+      try {
+         const model = clientApp.createOfflineModel(modelName, ['label'])
+         await model.addSynchroWhere({})
+         await model.synchronizeAll()
+         assert.equal((await model.findWhere({}))[0]?.label, 'visible')
       } finally {
          await cleanup()
       }
