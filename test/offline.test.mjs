@@ -16,7 +16,9 @@ import { pgTable, text, timestamp, integer } from 'drizzle-orm/pg-core'
 import { eq } from 'drizzle-orm'
 
 import { expressX, computeSyncResult } from '#root/src/server.mjs'
-import { createClient, offlinePlugin } from '../../express-x-client/src/client.js'
+import { createClient, offlinePlugin as rawOfflinePlugin } from '../../express-x-client/src/client.js'
+const offlinePlugin = (app, options = {}) =>
+   rawOfflinePlugin(app, { cacheNamespace: 'express-x-tests', ...options })
 const localOfflinePlugin = offlinePlugin
 
 import { drizzleOfflinePlugin as rawDrizzleOfflinePlugin } from '../../express-x-drizzle/src/drizzle-plugins.mjs'
@@ -3003,7 +3005,7 @@ describe('Full offline-first client ↔ server protocol', () => {
       }
    })
 
-   test('scoped reconnect sync preserves dirty records that moved out of scope', async () => {
+   test('scoped reconnect does not push records that moved outside its scope', async () => {
       const modelName = `model${++dbCounter}`
       const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
 
@@ -3056,8 +3058,9 @@ describe('Full offline-first client ↔ server protocol', () => {
             await new Promise(resolve => setTimeout(resolve, 10))
          }
 
-         assert.equal(serverRows[0]?.label, 'closed', 'dirty out-of-scope client update must be pushed to the server')
+         assert.equal(serverRows[0]?.label, 'open', 'out-of-scope client update must not cross the sync perimeter')
          assert.equal((await model.db.values.get('r1')).label, 'closed', 'client value must not be overwritten by stale scoped server data')
+         assert.equal((await model.db.metadata.get('r1')).__dirty__, true, 'out-of-scope update should remain dirty for a matching or broad scope')
       } finally {
          socket.disconnect()
          await new Promise(resolve => serverApp.io.close(resolve))
@@ -4250,6 +4253,63 @@ describe('Full offline-first client ↔ server protocol', () => {
          await new Promise(resolve => serverApp.io.close(resolve))
          pglite.close()
       }
+   })
+
+   test('concurrent cross-model creates cannot claim the same uid', async () => {
+      const firstName = `model${++dbCounter}`
+      const secondName = `model${++dbCounter}`
+      const pglite = new PGlite()
+      await pglite.exec(`
+         CREATE TABLE metadata (uid TEXT PRIMARY KEY, created_at TIMESTAMP, updated_at TIMESTAMP, deleted_at TIMESTAMP);
+         CREATE TABLE "${firstName}" (uid TEXT PRIMARY KEY, label TEXT NOT NULL);
+         CREATE TABLE "${secondName}" (uid TEXT PRIMARY KEY, label TEXT NOT NULL);
+      `)
+      const db = drizzle(pglite)
+      const metaTable = pgTable('metadata', {
+         uid: text('uid').primaryKey(),
+         created_at: timestamp(), updated_at: timestamp(), deleted_at: timestamp(),
+      })
+      const firstTable = pgTable(firstName, { uid: text('uid').primaryKey(), label: text('label').notNull() })
+      const secondTable = pgTable(secondName, { uid: text('uid').primaryKey(), label: text('label').notNull() })
+      const serverApp = expressX({})
+      serverApp.configure(drizzleOfflinePlugin, db, metaTable, [firstTable, secondTable])
+
+      try {
+         const results = await Promise.allSettled([
+            serverApp.service(firstName).createWithMeta('shared', { label: 'first' }, T0),
+            serverApp.service(secondName).createWithMeta('shared', { label: 'second' }, T0),
+         ])
+         assert.equal(results.filter(result => result.status === 'fulfilled').length, 1)
+         assert.equal(results.filter(result => result.status === 'rejected').length, 1)
+      } finally {
+         await new Promise(resolve => serverApp.io.close(resolve))
+         pglite.close()
+      }
+   })
+
+   test('scoped sync ignores client metadata for a real out-of-scope row', async () => {
+      const modelName = `model${++dbCounter}`
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
+      await db.insert(modelTable).values({ uid: 'closed-row', label: 'closed' })
+      await db.insert(metaTable).values({ uid: 'closed-row', created_at: T1 })
+      const serverApp = expressX({})
+      serverApp.configure(drizzleOfflinePlugin, db, metaTable, [modelTable])
+
+      try {
+         await serverApp.service('sync').go(modelName, { label: 'open' }, {
+            'closed-row': { uid: 'closed-row', created_at: T0 },
+         })
+         assert.equal((await db.select().from(modelTable))[0]?.label, 'closed')
+      } finally {
+         await new Promise(resolve => serverApp.io.close(resolve))
+         pglite.close()
+      }
+   })
+
+   test('offline plugin requires an explicit cache namespace', () => {
+      const serverApp = expressX({})
+      assert.throws(() => rawOfflinePlugin(serverApp), /cacheNamespace/)
+      serverApp.io.close()
    })
 
    test('create ignores caller-controlled uid and internal deletion marker', async () => {

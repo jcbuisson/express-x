@@ -225,7 +225,7 @@ export function expressX(config) {
          // the backup duration of the sessions and the packets
          maxDisconnectionDuration: config?.maxDisconnectionDuration ?? 2 * 60 * 1000,
          // whether to skip middlewares upon successful recovery
-         skipMiddlewares: true,
+         skipMiddlewares: config?.skipRecoveryMiddlewares ?? false,
       }
    })
 
@@ -552,7 +552,7 @@ export const roomCache = new WeakMap()
 export const dataCache = new WeakMap()
 
 
-export async function reloadPlugin(app) {
+export async function reloadPlugin(app, options = {}) {
 
    const io = app.get('io')
    const transferTtlMs = app.get('config')?.reloadTransferTtlMs ?? 2 * 60 * 1000
@@ -609,7 +609,9 @@ export async function reloadPlugin(app) {
             // copy rooms
             for (const room of fromSocketRooms) {
                if (room === fromSocketId) continue // do not include room associated to socket#id
-               toSocket.join(room)
+               const allowed = typeof options.authorizeRoomRestore === 'function'
+                  && await options.authorizeRoomRestore({ app, socket: toSocket, room })
+               if (allowed) toSocket.join(room)
             }
             // copy data
             toSocket.data = {
