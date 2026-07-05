@@ -19,7 +19,10 @@ import { expressX, computeSyncResult } from '#root/src/server.mjs'
 import { createClient, offlinePlugin } from '../../express-x-client/src/client.js'
 const localOfflinePlugin = offlinePlugin
 
-import { drizzleOfflinePlugin } from '../../express-x-drizzle/src/drizzle-plugins.mjs'
+import { drizzleOfflinePlugin as rawDrizzleOfflinePlugin } from '../../express-x-drizzle/src/drizzle-plugins.mjs'
+const allowAll = { authorize: async () => true, computeSyncResult }
+const drizzleOfflinePlugin = (app, db, metadata, models, options = {}) =>
+   rawDrizzleOfflinePlugin(app, db, metadata, models, { ...allowAll, ...options })
 const localDrizzleOfflinePlugin = drizzleOfflinePlugin
 
 const T0 = new Date('2026-01-01T00:00:00Z')
@@ -133,6 +136,16 @@ describe('Full offline-first client ↔ server protocol', () => {
       } finally {
          await cleanup()
       }
+   })
+
+   test('duplicate service registration is rejected', () => {
+      const serverApp = expressX({})
+      serverApp.createService('duplicate', { first: async () => true })
+      assert.throws(
+         () => serverApp.createService('duplicate', { second: async () => true }),
+         /already exists/,
+      )
+      serverApp.io.close()
    })
 
    test('server error is propagated to the client as a rejection', async () => {
@@ -2732,21 +2745,21 @@ describe('Full offline-first client ↔ server protocol', () => {
       serverApp.configure(drizzleOfflinePlugin, db, metaTable, [modelTable])
 
       const modelService = serverApp.service(modelName)
-      const originalFindMany = modelService.findMany
+      const originalFindMany = modelService.__findMany
       let releaseBroadFindMany
       let broadFindManyEntered
       let narrowFindManyEntered = false
       const broadFindManyStarted = new Promise(resolve => { broadFindManyEntered = resolve })
       const broadFindManyRelease = new Promise(resolve => { releaseBroadFindMany = resolve })
 
-      modelService.findMany = async (where) => {
+      modelService.__findMany = async (context, where) => {
          if (Object.keys(where).length === 0) {
             broadFindManyEntered()
             await broadFindManyRelease
          } else {
             narrowFindManyEntered = true
          }
-         return originalFindMany(where)
+         return originalFindMany(context, where)
       }
 
       try {
@@ -4175,6 +4188,64 @@ describe('Full offline-first client ↔ server protocol', () => {
             /valid timestamp/,
          )
          assert.equal((await db.select().from(modelTable)).length, 0)
+      } finally {
+         await new Promise(resolve => serverApp.io.close(resolve))
+         pglite.close()
+      }
+   })
+
+   test('Drizzle plugin requires authorization and restricts sync model names', async () => {
+      const modelName = `model${++dbCounter}`
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
+      const unauthorizedApp = expressX({})
+      assert.throws(
+         () => rawDrizzleOfflinePlugin(unauthorizedApp, db, metaTable, [modelTable]),
+         /requires an authorize/,
+      )
+      unauthorizedApp.io.close()
+
+      const serverApp = expressX({})
+      serverApp.configure(drizzleOfflinePlugin, db, metaTable, [modelTable])
+      try {
+         await assert.rejects(
+            serverApp.service('sync').go('not-configured', {}, {}),
+            /not configured/,
+         )
+      } finally {
+         await new Promise(resolve => serverApp.io.close(resolve))
+         pglite.close()
+      }
+   })
+
+   test('same uid cannot be created in two configured models', async () => {
+      const firstName = `model${++dbCounter}`
+      const secondName = `model${++dbCounter}`
+      const pglite = new PGlite()
+      await pglite.exec(`
+         CREATE TABLE metadata (uid TEXT PRIMARY KEY, created_at TIMESTAMP, updated_at TIMESTAMP, deleted_at TIMESTAMP);
+         CREATE TABLE "${firstName}" (uid TEXT PRIMARY KEY, label TEXT NOT NULL);
+         CREATE TABLE "${secondName}" (uid TEXT PRIMARY KEY, label TEXT NOT NULL);
+      `)
+      const db = drizzle(pglite)
+      const metaTable = pgTable('metadata', {
+         uid: text('uid').primaryKey(),
+         created_at: timestamp(), updated_at: timestamp(), deleted_at: timestamp(),
+      })
+      const firstTable = pgTable(firstName, {
+         uid: text('uid').primaryKey(), label: text('label').notNull(),
+      })
+      const secondTable = pgTable(secondName, {
+         uid: text('uid').primaryKey(), label: text('label').notNull(),
+      })
+      const serverApp = expressX({})
+      serverApp.configure(drizzleOfflinePlugin, db, metaTable, [firstTable, secondTable])
+
+      try {
+         await serverApp.service(firstName).createWithMeta('shared', { label: 'first' }, T0)
+         await assert.rejects(
+            serverApp.service(secondName).createWithMeta('shared', { label: 'second' }, T1),
+            /already belongs/,
+         )
       } finally {
          await new Promise(resolve => serverApp.io.close(resolve))
          pglite.close()

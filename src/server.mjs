@@ -175,7 +175,10 @@ function assertValidMetadataTimestamps(metadataDict, source) {
          throw new TypeError(`${source} metadata key '${uid}' does not match uid '${metadata.uid}'`)
       }
       const timestampFields = ['created_at', 'updated_at', 'deleted_at']
-      if (!timestampFields.some(field => metadata[field] != null)) {
+      // Timestamp-free database metadata can exist transiently while the
+      // Drizzle plugin locks/repairs a row. Client metadata must always carry
+      // a usable version.
+      if (source !== 'database' && !timestampFields.some(field => metadata[field] != null)) {
          throw new TypeError(`${source} metadata '${uid}' must contain a timestamp`)
       }
       for (const field of timestampFields) {
@@ -293,12 +296,14 @@ export function expressX(config) {
                   const context = {
                      app,
                      caller: 'client',
+                     origin: null,
                      transport: 'ws',
                      socket,
                      serviceName: name,
                      methodName: action,
                      args,
                   }
+                  context.origin = context
 
                   try {
                      const result = await serviceMethod(context, ...args)
@@ -353,6 +358,7 @@ export function expressX(config) {
     */
    function createService(name, methods) {
       if (typeof name !== 'string' || !name) throw new TypeError('service name must be a non-empty string')
+      if (services.has(name)) throw new EXError('duplicate-service', `service '${name}' already exists`)
       const service = Object.assign(Object.create(null), { _name: name })
 
       for (const [methodName, method] of Object.entries(methods ?? {})) {
@@ -375,7 +381,7 @@ export function expressX(config) {
             }
 
             // call method — use context.args so before-hooks can modify arguments
-            const result = await method(...context.args)
+            const result = await method.apply(context, context.args)
             // put result into context
             context.result = result
 
@@ -417,9 +423,24 @@ export function expressX(config) {
                methodName,
                args,
             }
+            context.origin = context
             const hookedMethod = service['__' + methodName]
             return hookedMethod(context, ...args)
          }
+      }
+
+      service.callWithContext = (parentContext, methodName, ...args) => {
+         const hookedMethod = service['__' + methodName]
+         if (!hookedMethod) throw new EXError('missing-method', `there is no method named '${methodName}' for service '${name}'`)
+         const context = {
+            app,
+            caller: 'server',
+            origin: parentContext?.origin ?? parentContext,
+            serviceName: service._name,
+            methodName,
+            args,
+         }
+         return hookedMethod(context, ...args)
       }
 
       // attach pub/sub publish callback
