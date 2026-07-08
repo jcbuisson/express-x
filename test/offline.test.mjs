@@ -2244,6 +2244,42 @@ describe('Full offline-first client ↔ server protocol', () => {
          const metaRows = await db.select().from(metaTable)
          const s1Meta = metaRows.find(r => r.uid === 's1')
          assert.ok(s1Meta, 'server metadata must be created after the first sync (updateDatabase + upsert)')
+         assert.ok(
+            s1Meta.created_at || s1Meta.updated_at || s1Meta.deleted_at,
+            'repaired server metadata must contain a usable timestamp',
+         )
+         assert.equal((await model.db.metadata.get('s1')).__dirty__, false, 'repaired local metadata should be clean')
+      } finally {
+         await cleanup()
+         pglite.close()
+      }
+   })
+
+   test('server-only row with missing metadata is repaired and pulled into client cache', async () => {
+      const modelName = `model${++dbCounter}`
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
+
+      await db.insert(modelTable).values({ uid: 'server-only', label: 'server-value' })
+
+      const { clientApp, cleanup } = await createTestContext(
+         serverApp => serverApp.configure(drizzleOfflinePlugin, db, metaTable, [modelTable]),
+         { useOfflinePlugin: true },
+      )
+
+      try {
+         const model = clientApp.createOfflineModel(modelName, ['label'])
+         await model.addSynchroWhere({})
+         await model.synchronizeAll()
+
+         const localValue = await model.db.values.get('server-only')
+         assert.equal(localValue?.label, 'server-value')
+
+         const localMeta = await model.db.metadata.get('server-only')
+         assert.ok(localMeta?.created_at, 'client should receive repaired server metadata with a timestamp')
+         assert.equal(localMeta.__dirty__, false)
+
+         const serverMeta = (await db.select().from(metaTable).where(eq(metaTable.uid, 'server-only')))[0]
+         assert.ok(serverMeta?.created_at, 'server should persist repaired metadata')
       } finally {
          await cleanup()
          pglite.close()
@@ -2339,6 +2375,36 @@ describe('Full offline-first client ↔ server protocol', () => {
          const localMeta = await model.db.metadata.get('r1')
          assert.ok(localMeta?.created_at, 'sync should repair local metadata')
          assert.equal(localMeta.__dirty__, false, 'repaired local metadata should be clean after server acknowledgement')
+      } finally {
+         await cleanup()
+         pglite.close()
+      }
+   })
+
+   test('local value with missing metadata does not resurrect a server tombstone', async () => {
+      const modelName = `model${++dbCounter}`
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
+
+      await db.insert(metaTable).values({ uid: 'r1', created_at: T0, deleted_at: T1 })
+
+      const { clientApp, cleanup } = await createTestContext(
+         serverApp => serverApp.configure(drizzleOfflinePlugin, db, metaTable, [modelTable]),
+         { useOfflinePlugin: true },
+      )
+
+      try {
+         const model = clientApp.createOfflineModel(modelName, ['label'])
+         await model.db.values.add({ uid: 'r1', label: 'stale-local-value' })
+         await model.addSynchroWhere({})
+
+         await model.synchronizeAll()
+
+         const serverRows = await db.select().from(modelTable).where(eq(modelTable.uid, 'r1'))
+         assert.equal(serverRows.length, 0, 'metadata repair must not resurrect a server-deleted row')
+         const serverMeta = (await db.select().from(metaTable).where(eq(metaTable.uid, 'r1')))[0]
+         assert.equal(new Date(serverMeta.deleted_at).getTime(), T1.getTime())
+         assert.ok(!await model.db.values.get('r1'), 'stale local value should be removed by server tombstone')
+         assert.ok(!await model.db.metadata.get('r1'), 'repaired local metadata should be removed after tombstone wins')
       } finally {
          await cleanup()
          pglite.close()
@@ -3005,7 +3071,7 @@ describe('Full offline-first client ↔ server protocol', () => {
       }
    })
 
-   test('scoped reconnect does not push records that moved outside its scope', async () => {
+   test('reconnect flushes offline updates that moved outside the registered sync scope', async () => {
       const modelName = `model${++dbCounter}`
       const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
 
@@ -3058,13 +3124,102 @@ describe('Full offline-first client ↔ server protocol', () => {
             await new Promise(resolve => setTimeout(resolve, 10))
          }
 
-         assert.equal(serverRows[0]?.label, 'open', 'out-of-scope client update must not cross the sync perimeter')
+         assert.equal(serverRows[0]?.label, 'closed', 'durable offline mutation must be flushed even after it moved out of the query scope')
          assert.equal((await model.db.values.get('r1')).label, 'closed', 'client value must not be overwritten by stale scoped server data')
-         assert.equal((await model.db.metadata.get('r1')).__dirty__, true, 'out-of-scope update should remain dirty for a matching or broad scope')
+         assert.equal((await model.db.metadata.get('r1')).__dirty__, false, 'flushed out-of-scope update should be marked clean')
       } finally {
          socket.disconnect()
          await new Promise(resolve => serverApp.io.close(resolve))
          pglite.close()
+      }
+   })
+
+   test('reconnect preserves updated_at for an offline create followed by offline update', async () => {
+      const modelName = `model${++dbCounter}`
+      const { pglite, db, metaTable, modelTable } = await createTestDb(modelName)
+
+      const serverApp = expressX({})
+      serverApp.configure(drizzleOfflinePlugin, db, metaTable, [modelTable])
+      await new Promise(resolve => serverApp.httpServer.listen(0, resolve))
+      const port = serverApp.httpServer.address().port
+
+      const socket = ioc(`http://localhost:${port}`, {
+         transports: ['websocket'],
+         autoConnect: false,
+      })
+      const clientApp = createClient(socket, { debug: false })
+      offlinePlugin(clientApp)
+      const model = clientApp.createOfflineModel(modelName, ['label'])
+
+      try {
+         const record = await model.create({ label: 'first' })
+         await model.update(record.uid, { label: 'second' })
+         const localMetaBeforeConnect = await model.db.metadata.get(record.uid)
+         assert.ok(localMetaBeforeConnect.created_at)
+         assert.ok(localMetaBeforeConnect.updated_at)
+         assert.equal(localMetaBeforeConnect.__operation__, 'create')
+
+         socket.connect()
+         await new Promise((resolve, reject) => {
+            socket.on('connect', resolve)
+            socket.on('connect_error', reject)
+         })
+
+         let serverRow
+         let serverMeta
+         for (let i = 0; i < 50; i++) {
+            serverRow = (await db.select().from(modelTable).where(eq(modelTable.uid, record.uid)))[0]
+            serverMeta = (await db.select().from(metaTable).where(eq(metaTable.uid, record.uid)))[0]
+            if (serverRow?.label === 'second' && serverMeta?.updated_at) break
+            await new Promise(resolve => setTimeout(resolve, 10))
+         }
+
+         assert.equal(serverRow?.label, 'second')
+         assert.equal(new Date(serverMeta.updated_at).getTime(), new Date(localMetaBeforeConnect.updated_at).getTime())
+
+         const localMetaAfterConnect = await model.db.metadata.get(record.uid)
+         assert.equal(localMetaAfterConnect.__dirty__, false)
+         assert.equal(new Date(localMetaAfterConnect.updated_at).getTime(), new Date(localMetaBeforeConnect.updated_at).getTime())
+      } finally {
+         socket.disconnect()
+         await new Promise(resolve => serverApp.io.close(resolve))
+         pglite.close()
+      }
+   })
+
+   test('direct update sends the full current value to prevent partial server upserts', async () => {
+      const modelName = `model${++dbCounter}`
+      let receivedData
+
+      const { clientApp, cleanup } = await createTestContext(serverApp => {
+         serverApp.createService(modelName, {
+            updateWithMeta: async (uid, data, updated_at) => {
+               receivedData = data
+               return [{ uid, ...data }, { uid, created_at: T0, updated_at, deleted_at: null }]
+            },
+            createWithMeta: async () => {},
+            deleteWithMeta: async () => {},
+            findMany: async () => [],
+         })
+         serverApp.createService('sync', {
+            go: async () => ({ addClient: [], updateClient: [], deleteClient: [], addDatabase: [], updateDatabase: [] }),
+         })
+      }, { useOfflinePlugin: true })
+
+      try {
+         const model = clientApp.createOfflineModel(modelName, ['label', 'description'])
+         await model.db.values.add({ uid: 'r1', label: 'original', description: 'must survive' })
+         await model.db.metadata.add({ uid: 'r1', created_at: T0 })
+
+         await model.update('r1', { label: 'patched' })
+         await new Promise(resolve => setTimeout(resolve, 50))
+
+         assert.deepEqual(receivedData, {
+            label: 'patched',
+            description: 'must survive',
+         })
+      } finally {
+         await cleanup()
       }
    })
 
