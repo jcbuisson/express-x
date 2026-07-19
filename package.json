@@ -1,9 +1,13 @@
 {
   "name": "@jcbuisson/express-x",
-  "version": "3.1.39",
+  "version": "4.0.2",
   "description": "",
   "type": "module",
-  "main": "src/server.mjs",
+  "main": "./src/server.mjs",
+  "exports": {
+    "./server": "./src/server.mjs",
+    "./client": "./src/client.js"
+  },
   "repository": {
     "type": "git",
     "url": "git+ssh://git@github.com/jcbuisson/express-x.git"
@@ -21,21 +25,22 @@
     "test": "node --preserve-symlinks --import tsx/esm --test --test-force-exit test/offline.test.mjs test/sync.test.mjs"
   },
   "keywords": [],
-  "dependencies": {
+  "peerDependencies": {
     "bcryptjs": "^2.4.3",
     "config": "^3.3.9",
     "express": "^4.18.2",
     "socket.io": "^4.6.0"
   },
+  "peerDependenciesMeta": {
+    "express": {
+      "optional": true
+    },
+    "socket.io": {
+      "optional": true
+    }
+  },
   "devDependencies": {
-    "@electric-sql/pglite": "^0.4.5",
-    "@jcbuisson/express-x-client": "^3.1.37",
-    "@jcbuisson/express-x-drizzle": "^3.1.38",
     "@vueuse/core": "^14.3.0",
-    "dexie": "^4.4.2",
-    "drizzle-orm": "^0.45.2",
-    "fake-indexeddb": "^6.2.5",
-    "rxjs": "^7.8.2",
     "socket.io-client": "^4.8.3",
     "tsx": "^4.22.1",
     "uuid": "^14.0.0"
