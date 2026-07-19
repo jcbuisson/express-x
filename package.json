@@ -1,6 +1,6 @@
 {
   "name": "@jcbuisson/express-x",
-  "version": "4.0.3",
+  "version": "4.0.4",
   "description": "",
   "type": "module",
   "main": "./src/server.mjs",
@@ -28,7 +28,7 @@
   "peerDependencies": {
     "bcryptjs": "^2.4.3",
     "config": "^3.3.9",
-    "express": "^4.18.2",
+    "express": "^5",
     "socket.io": "^4.6.0"
   },
   "peerDependenciesMeta": {
