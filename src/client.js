@@ -1,5 +1,3 @@
-// uuidv7 are monotonically increasing and much improve database performance amid B-tree indexes
-import { v7 as uuidv7 } from 'uuid';
 import { tryOnScopeDispose } from '@vueuse/core';
 import { useSessionStorage } from '@vueuse/core'
 
